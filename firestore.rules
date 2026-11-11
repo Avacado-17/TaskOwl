@@ -101,7 +101,7 @@ service cloud.firestore {
       match /tasks/{taskId} {
         allow read: if isOwner(userId);
         allow create: if isOwner(userId) && isValidId(taskId) && isValidTask(incoming())
-          && incoming().createdAt == request.time;
+          && incoming().createdAt is string;
         allow update: if isOwner(userId) && isValidTask(incoming())
           && incoming().createdAt == existing().createdAt;
         allow delete: if isOwner(userId);
@@ -120,7 +120,7 @@ service cloud.firestore {
       match /logs/{logId} {
         allow read: if isOwner(userId);
         allow create: if isOwner(userId) && isValidId(logId) && isValidLog(incoming())
-          && incoming().triggeredAt == request.time;
+          && incoming().triggeredAt is string;
         allow delete: if isOwner(userId);
       }
 
