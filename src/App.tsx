@@ -14,6 +14,24 @@ import {
 } from './services/calendarService';
 import { sendGmailAlert } from './services/emailService';
 import { sounds } from './services/soundEffects';
+import { 
+  db, 
+  auth, 
+  handleFirestoreError, 
+  OperationType, 
+  testConnection 
+} from './services/firebase';
+import { 
+  collection, 
+  query, 
+  onSnapshot, 
+  doc, 
+  setDoc, 
+  deleteDoc, 
+  serverTimestamp,
+  orderBy,
+  limit
+} from 'firebase/firestore';
 import {
   INITIAL_TASKS,
   INITIAL_PREFERENCES,
@@ -48,15 +66,7 @@ import { DashboardCustomizerModal } from './components/DashboardCustomizerModal'
 
 export default function App() {
   // Dashboard & Theme Customization state (Dark/White theme, accents, widgets, density)
-  const [customization, setCustomization] = useState<DashboardCustomization>(() => {
-    const saved = localStorage.getItem('orchestrator_customization');
-    if (saved) {
-      try {
-        return JSON.parse(saved);
-      } catch {}
-    }
-    return DEFAULT_CUSTOMIZATION;
-  });
+  const [customization, setCustomization] = useState<DashboardCustomization>(DEFAULT_CUSTOMIZATION);
 
   const [isCustomizerOpen, setIsCustomizerOpen] = useState(false);
 
@@ -75,94 +85,16 @@ export default function App() {
 
 
   // Check and purge legacy cached dummy data on launch
-  const [tasks, setTasks] = useState<Task[]>(() => {
-    try {
-      const cleanLaunch = localStorage.getItem('orchestrator_fresh_launch_v3');
-      if (!cleanLaunch) {
-        localStorage.removeItem('orchestrator_tasks');
-        localStorage.removeItem('orchestrator_logs');
-        localStorage.removeItem('orchestrator_notifs');
-        localStorage.removeItem('orchestrator_prefs');
-        localStorage.removeItem('orchestrator_fresh_launch_v1');
-        localStorage.removeItem('orchestrator_fresh_launch_v2');
-        localStorage.setItem('orchestrator_fresh_launch_v3', 'true');
-        return [];
-      }
-
-      const saved = localStorage.getItem('orchestrator_tasks');
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed)) {
-          // Filter out any legacy dummy task remnants
-          const clean = parsed.filter(
-            (t: any) =>
-              !t.id?.startsWith('task-00') &&
-              !t.id?.startsWith('task-10') &&
-              t.title !== 'Horizon Essay Prize' &&
-              t.title !== 'Study Abroad Expo' &&
-              t.title !== 'Oxford Essay Prize' &&
-              t.title !== 'IMLC-International Machine Learning Conference' &&
-              t.title !== 'Veritas AI Hackathon' &&
-              t.title !== 'ThinkNeuro Research Internship' &&
-              t.title !== 'Migrate Payment Webhooks to Event-Driven Cloud Functions' &&
-              t.title !== 'Zero-Knowledge Proof Verification Benchmark for Auth Flow' &&
-              t.title !== 'Multi-Region PostgreSQL Replication & Failover Testing' &&
-              t.title !== 'Executive Telemetry Dashboard Real-Time WebSocket Channel' &&
-              t.title !== 'Automated Deadline Escalation Engine Unit & Integration Tests' &&
-              t.title !== 'Single-Sign-On & Google Workspace OAuth Scope Consent Audit'
-          );
-          return clean;
-        }
-      }
-    } catch {}
-    return INITIAL_TASKS;
-  });
+  const [tasks, setTasks] = useState<Task[]>([]);
 
   // Automation Preferences
-  const [preferences, setPreferences] = useState<AutomationPreferences>(() => {
-    const saved = localStorage.getItem('orchestrator_prefs');
-    if (saved) {
-      try {
-        const parsed = JSON.parse(saved);
-        return parsed;
-      } catch {}
-    }
-    return INITIAL_PREFERENCES;
-  });
+  const [preferences, setPreferences] = useState<AutomationPreferences>(INITIAL_PREFERENCES);
 
   // Automation Execution Logs
-  const [logs, setLogs] = useState<AutomationLog[]>(() => {
-    try {
-      const cleanLaunch = localStorage.getItem('orchestrator_fresh_launch_v3');
-      if (!cleanLaunch) return [];
-
-      const saved = localStorage.getItem('orchestrator_logs');
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed)) {
-          return parsed.filter((l: any) => !l.id?.startsWith('log-'));
-        }
-      }
-    } catch {}
-    return INITIAL_LOGS;
-  });
+  const [logs, setLogs] = useState<AutomationLog[]>([]);
 
   // In-app Notifications
-  const [notifications, setNotifications] = useState<InAppNotification[]>(() => {
-    try {
-      const cleanLaunch = localStorage.getItem('orchestrator_fresh_launch_v3');
-      if (!cleanLaunch) return [];
-
-      const saved = localStorage.getItem('orchestrator_notifs');
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed)) {
-          return parsed.filter((n: any) => !n.id?.startsWith('notif-'));
-        }
-      }
-    } catch {}
-    return INITIAL_NOTIFICATIONS;
-  });
+  const [notifications, setNotifications] = useState<InAppNotification[]>([]);
 
   // User and Auth State
   const [user, setUser] = useState<User | null>(null);
@@ -201,30 +133,7 @@ export default function App() {
   // Apply theme & accent to document root
   useEffect(() => {
     applyThemeAndAccentToDom(customization.themeMode, customization.accentColor);
-    localStorage.setItem('orchestrator_customization', JSON.stringify(customization));
   }, [customization]);
-
-
-
-  // Persist tasks
-  useEffect(() => {
-    localStorage.setItem('orchestrator_tasks', JSON.stringify(tasks));
-  }, [tasks]);
-
-  // Persist preferences
-  useEffect(() => {
-    localStorage.setItem('orchestrator_prefs', JSON.stringify(preferences));
-  }, [preferences]);
-
-  // Persist logs
-  useEffect(() => {
-    localStorage.setItem('orchestrator_logs', JSON.stringify(logs));
-  }, [logs]);
-
-  // Persist notifications
-  useEffect(() => {
-    localStorage.setItem('orchestrator_notifs', JSON.stringify(notifications));
-  }, [notifications]);
 
   useEffect(() => {
     localStorage.setItem('taskowl_external_reminders', JSON.stringify(externalEventsReminded));
@@ -250,29 +159,90 @@ export default function App() {
     }
   }, []);
 
-  // Initialize Firebase Auth listener
+  // Firestore Subscriptions
   useEffect(() => {
-    const unsubscribe = initAuth(
+    const unsubscribeAuth = initAuth(
       (currentUser, token) => {
         setUser(currentUser);
-        if (currentUser?.email) {
-          setPreferences((prev) => ({
-            ...prev,
-            recipientEmail: currentUser.email || '',
-          }));
-        }
         loadCalendarEvents(token);
       },
       () => {
         setUser(null);
-        setPreferences((prev) => ({
-          ...prev,
-          recipientEmail: '',
-        }));
       }
     );
-    return () => unsubscribe();
+
+    return () => unsubscribeAuth();
   }, [loadCalendarEvents]);
+
+  // Handle Firestore synchronization when user state changes
+  useEffect(() => {
+    if (!user) {
+      setTasks([]);
+      setPreferences(INITIAL_PREFERENCES);
+      setLogs([]);
+      setNotifications([]);
+      setCustomization(DEFAULT_CUSTOMIZATION);
+      return;
+    }
+
+    const userId = user.uid;
+
+    // 1. Tasks Subscription
+    const tasksQuery = query(collection(db, `users/${userId}/tasks`), orderBy('createdAt', 'desc'));
+    const unsubscribeTasks = onSnapshot(tasksQuery, (snapshot) => {
+      const taskList = snapshot.docs.map(doc => doc.data() as Task);
+      setTasks(taskList);
+    }, (error) => handleFirestoreError(error, OperationType.LIST, `users/${userId}/tasks`));
+
+    // 2. Automation Preferences Subscription
+    const prefsDoc = doc(db, `users/${userId}/preferences`, 'automation');
+    const unsubscribePrefs = onSnapshot(prefsDoc, (snapshot) => {
+      if (snapshot.exists()) {
+        setPreferences(snapshot.data() as AutomationPreferences);
+      } else {
+        // Initialize if not present
+        setDoc(prefsDoc, INITIAL_PREFERENCES).catch(e => handleFirestoreError(e, OperationType.CREATE, prefsDoc.path));
+      }
+    }, (error) => handleFirestoreError(error, OperationType.GET, prefsDoc.path));
+
+    // 3. Customization Subscription
+    const customDoc = doc(db, `users/${userId}/preferences`, 'customization');
+    const unsubscribeCustom = onSnapshot(customDoc, (snapshot) => {
+      if (snapshot.exists()) {
+        setCustomization(snapshot.data() as DashboardCustomization);
+      } else {
+        // Initialize if not present
+        setDoc(customDoc, DEFAULT_CUSTOMIZATION).catch(e => handleFirestoreError(e, OperationType.CREATE, customDoc.path));
+      }
+    }, (error) => handleFirestoreError(error, OperationType.GET, customDoc.path));
+
+    // 4. Logs Subscription
+    const logsQuery = query(collection(db, `users/${userId}/logs`), orderBy('triggeredAt', 'desc'), limit(50));
+    const unsubscribeLogs = onSnapshot(logsQuery, (snapshot) => {
+      const logList = snapshot.docs.map(doc => doc.data() as AutomationLog);
+      setLogs(logList);
+    }, (error) => handleFirestoreError(error, OperationType.LIST, `users/${userId}/logs`));
+
+    // 5. Notifications Subscription
+    const notifsQuery = query(collection(db, `users/${userId}/notifications`), orderBy('timestamp', 'desc'), limit(100));
+    const unsubscribeNotifs = onSnapshot(notifsQuery, (snapshot) => {
+      const notifList = snapshot.docs.map(doc => doc.data() as InAppNotification);
+      setNotifications(notifList);
+    }, (error) => handleFirestoreError(error, OperationType.LIST, `users/${userId}/notifications`));
+
+    return () => {
+      unsubscribeTasks();
+      unsubscribePrefs();
+      unsubscribeCustom();
+      unsubscribeLogs();
+      unsubscribeNotifs();
+    };
+  }, [user]);
+
+  // Connection test on boot
+  useEffect(() => {
+    testConnection();
+  }, []);
 
   // Synchronize recipient email whenever signed-in Google user email updates
   useEffect(() => {
@@ -331,32 +301,47 @@ export default function App() {
     });
   };
 
-  const handleUpdateCustomization = (updates: Partial<DashboardCustomization>) => {
-    setCustomization((prev) => ({
-      ...prev,
+  const handleUpdateCustomization = async (updates: Partial<DashboardCustomization>) => {
+    if (!user) return;
+    const next = {
+      ...customization,
       ...updates,
       ...(updates.visibleWidgets
         ? {
             visibleWidgets: {
-              ...prev.visibleWidgets,
+              ...customization.visibleWidgets,
               ...updates.visibleWidgets,
             },
           }
         : {}),
-    }));
+    };
+    const customDoc = doc(db, `users/${user.uid}/preferences`, 'customization');
+    try {
+      await setDoc(customDoc, next);
+    } catch (e) {
+      handleFirestoreError(e, OperationType.UPDATE, customDoc.path);
+    }
   };
 
-  const handleResetCustomization = () => {
-    setCustomization(DEFAULT_CUSTOMIZATION);
-    showBanner('Reset dashboard preferences to default', 'info');
+  const handleResetCustomization = async () => {
+    if (!user) return;
+    const customDoc = doc(db, `users/${user.uid}/preferences`, 'customization');
+    try {
+      await setDoc(customDoc, DEFAULT_CUSTOMIZATION);
+      showBanner('Reset dashboard preferences to default', 'info');
+    } catch (e) {
+      handleFirestoreError(e, OperationType.UPDATE, customDoc.path);
+    }
   };
 
 
   // Add Log Entry
   const addLog = useCallback(
-    (ruleName: string, details: string, status: 'success' | 'warning' | 'info', taskTitle?: string, taskId?: string) => {
+    async (ruleName: string, details: string, status: 'success' | 'warning' | 'info', taskTitle?: string, taskId?: string) => {
+      if (!user) return;
+      const logId = `log-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`;
       const newLog: AutomationLog = {
-        id: `log-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
+        id: logId,
         ruleName,
         details,
         status,
@@ -364,21 +349,29 @@ export default function App() {
         taskId,
         triggeredAt: new Date().toISOString(),
       };
-      setLogs((prev) => [newLog, ...prev.slice(0, 49)]);
+      
+      const logDoc = doc(db, `users/${user.uid}/logs`, logId);
+      try {
+        await setDoc(logDoc, newLog);
+      } catch (e) {
+        handleFirestoreError(e, OperationType.CREATE, logDoc.path);
+      }
     },
-    []
+    [user]
   );
 
   // Add Notification Entry
   const addNotification = useCallback(
-    (
+    async (
       title: string,
       message: string,
       type: InAppNotification['type'],
       taskId?: string
     ) => {
+      if (!user) return;
+      const notifId = `notif-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`;
       const newNotif: InAppNotification = {
-        id: `notif-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
+        id: notifId,
         title,
         message,
         type,
@@ -386,9 +379,15 @@ export default function App() {
         timestamp: new Date().toISOString(),
         read: false,
       };
-      setNotifications((prev) => [newNotif, ...prev]);
+      
+      const notifDoc = doc(db, `users/${user.uid}/notifications`, notifId);
+      try {
+        await setDoc(notifDoc, newNotif);
+      } catch (e) {
+        handleFirestoreError(e, OperationType.CREATE, notifDoc.path);
+      }
     },
-    []
+    [user]
   );
 
   // Heartbeat Automation Engine Runner (Auto 48h & 24h Gmail Alerts)
@@ -764,23 +763,25 @@ export default function App() {
 
   // Save Task (Create or Update)
   const handleSaveTask = async (taskData: Partial<Task>, syncDirectly: boolean) => {
-    if (editingTask) {
-      // Update
-      const updated = tasks.map((t) =>
-        t.id === editingTask.id ? ({ ...t, ...taskData } as Task) : t
-      );
-      setTasks(updated);
-      showBanner(`Updated "${taskData.title}"`);
+    if (!user) return;
+    const userId = user.uid;
 
-      // If user toggled sync on edit
-      if (syncDirectly && !editingTask.syncedToCalendar) {
-        const found = updated.find((t) => t.id === editingTask.id);
-        if (found) await handleSyncTaskToCalendar(found);
+    if (editingTask) {
+      const updated = { ...editingTask, ...taskData } as Task;
+      const taskDoc = doc(db, `users/${userId}/tasks`, editingTask.id);
+      try {
+        await setDoc(taskDoc, updated);
+        showBanner(`Updated "${taskData.title}"`);
+        if (syncDirectly && !editingTask.syncedToCalendar) {
+          await handleSyncTaskToCalendar(updated);
+        }
+      } catch (e) {
+        handleFirestoreError(e, OperationType.UPDATE, taskDoc.path);
       }
     } else {
-      // Create new
+      const taskId = `task-${Date.now()}`;
       const newTask: Task = {
-        id: `task-${Date.now()}`,
+        id: taskId,
         title: taskData.title || 'Untitled Deliverable',
         description: taskData.description || '',
         lane: taskData.lane || defaultModalLane,
@@ -804,39 +805,48 @@ export default function App() {
         createdAt: new Date().toISOString(),
       };
 
-      setTasks((prev) => [newTask, ...prev]);
-      showBanner(`Created deliverable "${newTask.title}"`);
-
-      if (syncDirectly) {
-        await handleSyncTaskToCalendar(newTask);
+      const taskDoc = doc(db, `users/${userId}/tasks`, taskId);
+      try {
+        await setDoc(taskDoc, { ...newTask, createdAt: new Date().toISOString() }); // Use client side string for now to match rules logic or update rules
+        showBanner(`Created deliverable "${newTask.title}"`);
+        if (syncDirectly) {
+          await handleSyncTaskToCalendar(newTask);
+        }
+      } catch (e) {
+        handleFirestoreError(e, OperationType.CREATE, taskDoc.path);
       }
     }
   };
 
   // Move task lane in Kanban
-  const handleUpdateTaskLane = (taskId: string, newLane: LaneType) => {
-    setTasks((prev) =>
-      prev.map((t) =>
-        t.id === taskId
-          ? {
-              ...t,
-              lane: newLane,
-              completedAt: newLane === 'done' ? new Date().toISOString() : undefined,
-            }
-          : t
-      )
-    );
+  const handleUpdateTaskLane = async (taskId: string, newLane: LaneType) => {
+    if (!user) return;
+    const task = tasks.find(t => t.id === taskId);
+    if (!task) return;
+
+    const taskDoc = doc(db, `users/${user.uid}/tasks`, taskId);
+    try {
+      await setDoc(taskDoc, {
+        ...task,
+        lane: newLane,
+        completedAt: newLane === 'done' ? new Date().toISOString() : undefined,
+      });
+    } catch (e) {
+      handleFirestoreError(e, OperationType.UPDATE, taskDoc.path);
+    }
   };
 
   // Inline quick task add from MainTableView
-  const handleAddNewTaskInline = (
+  const handleAddNewTaskInline = async (
     title: string,
     lane: LaneType = 'backlog',
     priority: PriorityType = 'medium',
     dueDate?: string
   ) => {
+    if (!user) return;
+    const taskId = `task-${Date.now()}`;
     const newTask: Task = {
-      id: `task-${Date.now()}`,
+      id: taskId,
       title,
       description: '',
       lane,
@@ -859,25 +869,45 @@ export default function App() {
       escalated: false,
       createdAt: new Date().toISOString(),
     };
-    setTasks((prev) => [newTask, ...prev]);
-    showBanner(`Created "${title}"`);
+
+    const taskDoc = doc(db, `users/${user.uid}/tasks`, taskId);
+    try {
+      await setDoc(taskDoc, newTask);
+      showBanner(`Created "${title}"`);
+    } catch (e) {
+      handleFirestoreError(e, OperationType.CREATE, taskDoc.path);
+    }
   };
 
   // Direct priority toggle from MainTableView
-  const handleUpdateTaskPriority = (taskId: string, newPriority: PriorityType) => {
-    setTasks((prev) =>
-      prev.map((t) => (t.id === taskId ? { ...t, priority: newPriority } : t))
-    );
-    showBanner(`Updated priority to ${newPriority.toUpperCase()}`);
+  const handleUpdateTaskPriority = async (taskId: string, newPriority: PriorityType) => {
+    if (!user) return;
+    const task = tasks.find(t => t.id === taskId);
+    if (!task) return;
+
+    const taskDoc = doc(db, `users/${user.uid}/tasks`, taskId);
+    try {
+      await setDoc(taskDoc, { ...task, priority: newPriority });
+      showBanner(`Updated priority to ${newPriority.toUpperCase()}`);
+    } catch (e) {
+      handleFirestoreError(e, OperationType.UPDATE, taskDoc.path);
+    }
   };
 
   // Reschedule deadline (e.g., drag and drop on calendar view)
-  const handleUpdateTaskDeadline = (taskId: string, newDeadlineIso: string) => {
-    setTasks((prev) =>
-      prev.map((t) => (t.id === taskId ? { ...t, deadline: newDeadlineIso } : t))
-    );
-    const dateStr = new Date(newDeadlineIso).toLocaleDateString([], { month: 'short', day: 'numeric' });
-    showBanner(`Rescheduled task to ${dateStr}`);
+  const handleUpdateTaskDeadline = async (taskId: string, newDeadlineIso: string) => {
+    if (!user) return;
+    const task = tasks.find(t => t.id === taskId);
+    if (!task) return;
+
+    const taskDoc = doc(db, `users/${user.uid}/tasks`, taskId);
+    try {
+      await setDoc(taskDoc, { ...task, deadline: newDeadlineIso });
+      const dateStr = new Date(newDeadlineIso).toLocaleDateString([], { month: 'short', day: 'numeric' });
+      showBanner(`Rescheduled task to ${dateStr}`);
+    } catch (e) {
+      handleFirestoreError(e, OperationType.UPDATE, taskDoc.path);
+    }
   };
 
   // Reorder tasks in list via drag and drop
@@ -898,7 +928,7 @@ export default function App() {
 
 
   const handleConfirmDelete = async () => {
-    if (!deleteConfirmation.task) return;
+    if (!deleteConfirmation.task || !user) return;
     const taskToDelete = deleteConfirmation.task;
 
     // If synced to Google Calendar, remove event if token is available
@@ -913,8 +943,14 @@ export default function App() {
       }
     }
 
-    setTasks((prev) => prev.filter((t) => t.id !== taskToDelete.id));
-    showBanner(`Deleted "${taskToDelete.title}"`, 'info');
+    const taskDoc = doc(db, `users/${user.uid}/tasks`, taskToDelete.id);
+    try {
+      await deleteDoc(taskDoc);
+      showBanner(`Deleted "${taskToDelete.title}"`, 'info');
+    } catch (e) {
+      handleFirestoreError(e, OperationType.DELETE, taskDoc.path);
+    }
+    
     setDeleteConfirmation({ isOpen: false, task: null });
   };
 
@@ -1059,13 +1095,24 @@ export default function App() {
         {activeTab === 'automations' && (
           <AutomationsHub
             preferences={preferences}
-            onUpdatePreferences={(newPrefs) => {
-              setPreferences((prev) => ({ ...prev, ...newPrefs }));
-              showBanner('Automation preferences updated.');
+            onUpdatePreferences={async (newPrefs) => {
+              if (!user) return;
+              const next = { ...preferences, ...newPrefs };
+              const prefsDoc = doc(db, `users/${user.uid}/preferences`, 'automation');
+              try {
+                await setDoc(prefsDoc, next);
+                showBanner('Automation preferences updated.');
+              } catch (e) {
+                handleFirestoreError(e, OperationType.UPDATE, prefsDoc.path);
+              }
             }}
             logs={logs}
-            onClearLogs={() => {
-              setLogs([]);
+            onClearLogs={async () => {
+              if (!user) return;
+              for (const log of logs) {
+                const logDoc = doc(db, `users/${user.uid}/logs`, log.id);
+                await deleteDoc(logDoc).catch(e => handleFirestoreError(e, OperationType.DELETE, logDoc.path));
+              }
               showBanner('Automation execution logs cleared.', 'info');
             }}
             onTriggerHeartbeatNow={() => {
@@ -1154,17 +1201,33 @@ export default function App() {
         isOpen={isNotificationCenterOpen}
         onClose={() => setIsNotificationCenterOpen(false)}
         notifications={notifications}
-        onMarkAsRead={(id) => {
-          setNotifications((prev) =>
-            prev.map((n) => (n.id === id ? { ...n, read: true } : n))
-          );
+        onMarkAsRead={async (id) => {
+          if (!user) return;
+          const n = notifications.find(notif => notif.id === id);
+          if (!n) return;
+          const notifDoc = doc(db, `users/${user.uid}/notifications`, id);
+          try {
+            await setDoc(notifDoc, { ...n, read: true });
+          } catch (e) {
+            handleFirestoreError(e, OperationType.UPDATE, notifDoc.path);
+          }
         }}
-        onMarkAllAsRead={() => {
-          setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
+        onMarkAllAsRead={async () => {
+          if (!user) return;
+          for (const n of notifications) {
+            if (!n.read) {
+              const notifDoc = doc(db, `users/${user.uid}/notifications`, n.id);
+              await setDoc(notifDoc, { ...n, read: true }).catch(e => handleFirestoreError(e, OperationType.UPDATE, notifDoc.path));
+            }
+          }
           showBanner('All notifications marked as read.', 'info');
         }}
-        onClearAll={() => {
-          setNotifications([]);
+        onClearAll={async () => {
+          if (!user) return;
+          for (const n of notifications) {
+            const notifDoc = doc(db, `users/${user.uid}/notifications`, n.id);
+            await deleteDoc(notifDoc).catch(e => handleFirestoreError(e, OperationType.DELETE, notifDoc.path));
+          }
           showBanner('Notification history cleared.', 'info');
         }}
         onSelectTask={(taskId) => {

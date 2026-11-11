@@ -1,0 +1,123 @@
+{
+  "entities": {
+    "Task": {
+      "title": "Task",
+      "description": "A deliverable task managed by TaskOwl.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "title": { "type": "string", "maxLength": 200 },
+        "description": { "type": "string", "maxLength": 2000 },
+        "lane": { "type": "string", "enum": ["backlog", "in_progress", "review", "done"] },
+        "priority": { "type": "string", "enum": ["low", "medium", "high", "urgent"] },
+        "originalPriority": { "type": "string", "enum": ["low", "medium", "high", "urgent"] },
+        "deadline": { "type": "string", "format": "date-time" },
+        "estimatedHours": { "type": "number" },
+        "assignee": {
+          "type": "object",
+          "properties": {
+            "name": { "type": "string" },
+            "role": { "type": "string" },
+            "initials": { "type": "string" }
+          }
+        },
+        "tags": { "type": "array", "items": { "type": "string" } },
+        "syncedToCalendar": { "type": "boolean" },
+        "calendarEventId": { "type": "string" },
+        "calendarEventUrl": { "type": "string" },
+        "escalated": { "type": "boolean" },
+        "email48hSent": { "type": "boolean" },
+        "email24hSent": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "completedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "title", "lane", "priority", "deadline", "assignee", "createdAt"]
+    },
+    "AutomationPreferences": {
+      "title": "Automation Preferences",
+      "description": "User preferences for task automations and reminders.",
+      "type": "object",
+      "properties": {
+        "notify24Hours": { "type": "boolean" },
+        "notify1Hour": { "type": "boolean" },
+        "autoEscalateOverdue": { "type": "boolean" },
+        "autoEscalateHoursThreshold": { "type": "number" },
+        "morningDigest": { "type": "boolean" },
+        "morningDigestTime": { "type": "string" },
+        "calendarReminderMinutes": { "type": "number" },
+        "emailUpdatesEnabled": { "type": "boolean" },
+        "recipientEmail": { "type": "string" },
+        "audioChimesEnabled": { "type": "boolean" },
+        "remindCalendarExternalEvents": { "type": "boolean" }
+      }
+    },
+    "DashboardCustomization": {
+      "title": "Dashboard Customization",
+      "description": "User preferences for dashboard theme and layout.",
+      "type": "object",
+      "properties": {
+        "themeMode": { "type": "string", "enum": ["dark", "light"] },
+        "accentColor": { "type": "string" },
+        "accentLabel": { "type": "string" },
+        "density": { "type": "string", "enum": ["comfortable", "compact"] },
+        "visibleWidgets": { "type": "object" },
+        "widgetOrder": { "type": "array", "items": { "type": "string" } },
+        "kpiOrder": { "type": "array", "items": { "type": "string" } },
+        "tableColumnOrder": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "AutomationLog": {
+      "title": "Automation Log",
+      "description": "A log entry for an executed automation rule.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "ruleName": { "type": "string" },
+        "taskId": { "type": "string" },
+        "taskTitle": { "type": "string" },
+        "triggeredAt": { "type": "string", "format": "date-time" },
+        "status": { "type": "string", "enum": ["success", "warning", "info"] },
+        "details": { "type": "string" }
+      },
+      "required": ["id", "ruleName", "triggeredAt", "status", "details"]
+    },
+    "InAppNotification": {
+      "title": "Notification",
+      "description": "An in-app notification for the user.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "type": { "type": "string" },
+        "title": { "type": "string" },
+        "message": { "type": "string" },
+        "taskId": { "type": "string" },
+        "timestamp": { "type": "string", "format": "date-time" },
+        "read": { "type": "boolean" },
+        "actionUrl": { "type": "string" }
+      },
+      "required": ["id", "type", "title", "message", "timestamp", "read"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}/tasks/{taskId}": {
+      "schema": "Task",
+      "description": "Collection of user-specific tasks."
+    },
+    "/users/{userId}/preferences/automation": {
+      "schema": "AutomationPreferences",
+      "description": "Automation settings for a specific user."
+    },
+    "/users/{userId}/preferences/customization": {
+      "schema": "DashboardCustomization",
+      "description": "UI customization settings for a specific user."
+    },
+    "/users/{userId}/logs/{logId}": {
+      "schema": "AutomationLog",
+      "description": "Log of automation actions for the user."
+    },
+    "/users/{userId}/notifications/{notificationId}": {
+      "schema": "InAppNotification",
+      "description": "Notifications for the user."
+    }
+  }
+}
