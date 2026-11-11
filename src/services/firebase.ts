@@ -40,8 +40,9 @@ export interface FirestoreErrorInfo {
 }
 
 export function handleFirestoreError(error: unknown, operationType: OperationType, path: string | null) {
+  const errMessage = error instanceof Error ? error.message : String(error);
   const errInfo: FirestoreErrorInfo = {
-    error: error instanceof Error ? error.message : String(error),
+    error: errMessage,
     authInfo: {
       userId: auth.currentUser?.uid,
       email: auth.currentUser?.email,
@@ -52,8 +53,17 @@ export function handleFirestoreError(error: unknown, operationType: OperationTyp
     path
   };
   console.error('Firestore Error: ', JSON.stringify(errInfo));
+  
+  // Visual alert for critical failures during debugging
+  if (errMessage.toLowerCase().includes('permission-denied') || errMessage.toLowerCase().includes('unauthorized')) {
+    alert(`Persistence Error: Access Denied to ${path}. Please ensure you are signed in.`);
+  } else {
+    alert(`Database Error (${operationType}): ${errMessage}`);
+  }
+
   throw new Error(JSON.stringify(errInfo));
 }
+
 
 export async function testConnection() {
   try {

@@ -865,10 +865,13 @@ export default function App() {
     };
 
     const taskDoc = doc(db, `users/${user.uid}/tasks`, taskId);
+    console.log('Attempting to create task:', newTask);
     try {
       await setDoc(taskDoc, newTask);
+      console.log('Task successfully created in Firestore:', taskId);
       showBanner(`Created "${title}"`);
     } catch (e) {
+
       handleFirestoreError(e, OperationType.CREATE, taskDoc.path);
     }
   };
