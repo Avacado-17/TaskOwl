@@ -51,7 +51,7 @@ export async function createCalendarEvent(
 
   const eventPayload = {
     summary: `[Task] ${task.title}`,
-    description: `Priority: ${task.priority.toUpperCase()}\nLane: ${task.lane}\nEstimated: ${task.estimatedHours}h\nAssignee: ${task.assignee.name}\n\n${task.description || ''}\n\nManaged by Oculis.`,
+    description: `Priority: ${task.priority.toUpperCase()}\nLane: ${task.lane}\nEstimated: ${task.estimatedHours}h\nAssignee: ${task.assignee.name}\n\n${task.description || ''}\n\nManaged by TaskOwl.`,
     start: {
       dateTime: startTime.toISOString(),
       timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,

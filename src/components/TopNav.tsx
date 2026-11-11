@@ -48,15 +48,15 @@ export const TopNav: React.FC<TopNavProps> = ({
       <div className="max-w-[1600px] mx-auto flex items-center justify-between gap-4 sm:gap-8">
         <div className="flex items-center gap-3 shrink-0">
           <div className="flex items-center gap-2 select-none">
-            <div className="w-8 h-8 rounded-lg overflow-hidden border border-red-500/30 shadow-md ring-1 ring-black/40 shrink-0">
+            <div className="w-8 h-8 rounded-lg overflow-hidden border border-amber-500/30 shadow-md ring-1 ring-black/40 shrink-0">
               <img
-                src="/assets/oculis/logo.jpg"
-                alt="Oculis"
+                src="/assets/taskowl/logo.jpg"
+                alt="TaskOwl"
                 className="w-full h-full object-cover"
               />
             </div>
             <span className="text-sm font-bold tracking-tight text-[var(--text-primary)] whitespace-nowrap shrink-0 font-heading">
-              Oculis
+              TaskOwl
             </span>
           </div>
 

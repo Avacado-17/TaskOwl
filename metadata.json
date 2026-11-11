@@ -1,6 +1,6 @@
 {
-  "name": "Oculis",
-  "description": "Oculis - Executive dashboard and agile kanban orchestrator with real-time Google Calendar sync, proactive deadline automations, Gmail dispatch, and dual-theme tactical interface.",
+  "name": "TaskOwl",
+  "description": "TaskOwl - Executive dashboard and agile kanban orchestrator with real-time Google Calendar sync, proactive deadline automations, Gmail dispatch, and dual-theme tactical interface.",
   "requestFramePermissions": [],
   "majorCapabilities": [
     "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"

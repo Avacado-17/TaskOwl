@@ -620,7 +620,7 @@ export default function App() {
 
     const htmlBody = `
       <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; max-width: 600px; margin: 0 auto; background: #000000; color: #f8fafc; padding: 24px; border-radius: 8px; border: 1px solid #334155;">
-        <h2 style="color: #ef4444; margin-top: 0;">Oculis | Daily Executive Digest</h2>
+        <h2 style="color: #eab308; margin-top: 0;">TaskOwl | Daily Executive Digest</h2>
         <p style="font-size: 14px; color: #94a3b8;">Here is your executive deliverable briefing for <strong>${new Date().toLocaleDateString([], { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}</strong>.</p>
         
         <div style="margin: 20px 0; padding: 16px; background: #0f172a; border-radius: 6px; border: 1px solid #1e293b;">
@@ -654,7 +654,7 @@ export default function App() {
         </table>
 
         <p style="font-size: 11px; color: #64748b; margin-top: 32px; border-top: 1px solid #1e293b; padding-top: 16px;">
-          Dispatched in real-time by Oculis.
+          Dispatched in real-time by TaskOwl.
         </p>
       </div>
     `;
@@ -662,7 +662,7 @@ export default function App() {
     await sendGmailAlert(
       token,
       recipient,
-      `[Oculis Executive Digest] Deliverable Summary for ${new Date().toLocaleDateString([], { month: 'short', day: 'numeric' })}`,
+      `[TaskOwl Executive Digest] Deliverable Summary for ${new Date().toLocaleDateString([], { month: 'short', day: 'numeric' })}`,
       htmlBody
     );
 
@@ -839,21 +839,21 @@ export default function App() {
     return (
       <div className="min-h-screen bg-black flex flex-col items-center justify-center p-6 select-none animate-in fade-in duration-300">
         <div className="relative group">
-          <div className="absolute -inset-4 bg-red-600/25 rounded-3xl blur-2xl animate-pulse" />
-          <div className="relative w-36 h-36 sm:w-44 sm:h-44 rounded-2xl overflow-hidden border border-red-500/40 shadow-2xl shadow-red-950/70 ring-1 ring-white/10">
+          <div className="absolute -inset-4 bg-amber-500/20 rounded-3xl blur-2xl animate-pulse" />
+          <div className="relative w-36 h-36 sm:w-44 sm:h-44 rounded-2xl overflow-hidden border border-amber-500/40 shadow-2xl shadow-amber-950/70 ring-1 ring-white/10">
             <img
-              src="/assets/oculis/logo.jpg"
-              alt="Oculis"
+              src="/assets/taskowl/logo.jpg"
+              alt="TaskOwl"
               className="w-full h-full object-cover"
             />
           </div>
         </div>
         <div className="mt-7 flex flex-col items-center gap-3">
           <div className="w-36 h-1 bg-white/10 rounded-full overflow-hidden relative">
-            <div className="absolute inset-y-0 left-0 w-1/2 bg-red-500 rounded-full animate-pulse" />
+            <div className="absolute inset-y-0 left-0 w-1/2 bg-amber-500 rounded-full animate-pulse" />
           </div>
           <span className="text-[11px] font-mono text-zinc-400 font-semibold tracking-widest uppercase">
-            Booting Workspace...
+            Booting TaskOwl...
           </span>
         </div>
       </div>
@@ -1016,9 +1016,9 @@ export default function App() {
               await sendGmailAlert(
                 token,
                 recipient,
-                '[Test Alert] Oculis Automation Engine',
+                '[Test Alert] TaskOwl Automation Engine',
                 `<div style="font-family: sans-serif; background: #000000; color: #f8fafc; padding: 20px; border-radius: 8px; border: 1px solid #334155;">
-                  <h2 style="color: #ef4444;">Oculis Automation Engine Verification</h2>
+                  <h2 style="color: #eab308;">TaskOwl Automation Engine Verification</h2>
                   <p>This is a real-time test notification sent via Google Workspace Gmail API integration to ${recipient}.</p>
                   <p>All automated deadline reminders will be routed to this inbox.</p>
                 </div>`
