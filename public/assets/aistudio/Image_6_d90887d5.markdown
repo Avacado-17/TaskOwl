@@ -1,0 +1,208 @@
+---
+name: Obsidian Cyber-Tactical
+colors:
+  surface: '#16111d'
+  surface-dim: '#16111d'
+  surface-bright: '#3c3744'
+  surface-container-lowest: '#100c17'
+  surface-container-low: '#1e1a25'
+  surface-container: '#221e29'
+  surface-container-high: '#2d2834'
+  surface-container-highest: '#38323f'
+  on-surface: '#e8dff0'
+  on-surface-variant: '#e3bfb1'
+  inverse-surface: '#e8dff0'
+  inverse-on-surface: '#332e3b'
+  outline: '#aa8a7d'
+  outline-variant: '#5a4137'
+  surface-tint: '#ffb597'
+  primary: '#ffb597'
+  on-primary: '#591d00'
+  primary-container: '#ff6200'
+  on-primary-container: '#541b00'
+  inverse-primary: '#a53d00'
+  secondary: '#ffffff'
+  on-secondary: '#2e3300'
+  secondary-container: '#daee00'
+  on-secondary-container: '#606a00'
+  tertiary: '#c3caaa'
+  on-tertiary: '#2d331c'
+  tertiary-container: '#92987a'
+  on-tertiary-container: '#2a3019'
+  error: '#ffb4ab'
+  on-error: '#690005'
+  error-container: '#93000a'
+  on-error-container: '#ffdad6'
+  primary-fixed: '#ffdbcd'
+  primary-fixed-dim: '#ffb597'
+  on-primary-fixed: '#360f00'
+  on-primary-fixed-variant: '#7e2c00'
+  secondary-fixed: '#daee00'
+  secondary-fixed-dim: '#bfd100'
+  on-secondary-fixed: '#1a1e00'
+  on-secondary-fixed-variant: '#444b00'
+  tertiary-fixed: '#e0e6c4'
+  tertiary-fixed-dim: '#c3caaa'
+  on-tertiary-fixed: '#181e09'
+  on-tertiary-fixed-variant: '#434931'
+  background: '#16111d'
+  on-background: '#e8dff0'
+  surface-variant: '#38323f'
+typography:
+  display-lg:
+    fontFamily: Inter
+    fontSize: 3.5rem
+    fontWeight: '800'
+    lineHeight: 4rem
+    letterSpacing: -0.03em
+  display-lg-mobile:
+    fontFamily: Inter
+    fontSize: 2.25rem
+    fontWeight: '800'
+    lineHeight: 2.75rem
+    letterSpacing: -0.02em
+  headline-lg:
+    fontFamily: Inter
+    fontSize: 2rem
+    fontWeight: '700'
+    lineHeight: 2.5rem
+    letterSpacing: -0.02em
+  headline-md:
+    fontFamily: Inter
+    fontSize: 1.5rem
+    fontWeight: '600'
+    lineHeight: 2rem
+    letterSpacing: -0.015em
+  headline-sm:
+    fontFamily: Inter
+    fontSize: 1.25rem
+    fontWeight: '600'
+    lineHeight: 1.75rem
+    letterSpacing: -0.01em
+  body-lg:
+    fontFamily: Inter
+    fontSize: 1.125rem
+    fontWeight: '400'
+    lineHeight: 1.75rem
+    letterSpacing: -0.005em
+  body-md:
+    fontFamily: Inter
+    fontSize: 0.9375rem
+    fontWeight: '400'
+    lineHeight: 1.5rem
+  body-sm:
+    fontFamily: Inter
+    fontSize: 0.8125rem
+    fontWeight: '400'
+    lineHeight: 1.25rem
+  label-lg:
+    fontFamily: JetBrains Mono
+    fontSize: 0.875rem
+    fontWeight: '600'
+    lineHeight: 1.25rem
+    letterSpacing: 0.04em
+  label-md:
+    fontFamily: JetBrains Mono
+    fontSize: 0.75rem
+    fontWeight: '500'
+    lineHeight: 1rem
+    letterSpacing: 0.05em
+  label-sm:
+    fontFamily: JetBrains Mono
+    fontSize: 0.6875rem
+    fontWeight: '500'
+    lineHeight: 0.875rem
+    letterSpacing: 0.06em
+rounded:
+  sm: 0.125rem
+  DEFAULT: 0.25rem
+  md: 0.375rem
+  lg: 0.5rem
+  xl: 0.75rem
+  full: 9999px
+spacing:
+  gutter: 1rem
+  gutter-md: 1.5rem
+  gutter-lg: 2rem
+  margin: 1rem
+  margin-md: 2rem
+  margin-lg: 3rem
+  space-xs: 0.25rem
+  space-sm: 0.5rem
+  space-md: 1rem
+  space-lg: 1.5rem
+  space-xl: 2.5rem
+---
+
+## Brand & Style
+This design system embodies an immersive, futuristic command-and-control aesthetic fused with tactical utility. Built for high-density monitoring environments, performance tooling, and immersive computational dashboards, it balances an abyssal midnight-violet canvas with sharp, industrial olive structures and high-voltage kinetic accents.
+
+The visual style combines modern tactical minimalism with purposeful luminescence. It rejects gratuitous decoration in favor of ultra-high-contrast legibility, focused information hierarchies, and surgical signal identification. Deep obsidian voids push noise into the background, while piercing neon orange and acidic lime bring critical operations directly into focus.
+
+## Colors
+The palette leverages chromatic priority to establish instantaneous visual triage:
+
+- **Deep Obsidian & Midnight Violet**: Layered base surfaces (`#0d0914`, `#150f22`, and `#1f1633`) create depth without stark, pitch-black starkness. They preserve ocular comfort during sustained exposure.
+- **Tactical Olive Drab**: Secondary grounding tones (`#2a2e1d` and `#3c422a`) construct subdued outlines, structured metadata badges, and low-priority system containers.
+- **Electric Neon Orange**: Primary focus accent (`#ff6200` to `#ff7700`) allocated strictly for high-visibility triggers, active state indicators, critical path operations, and priority system alerts.
+- **Acidic Lime / Neon Yellow**: Precision metric indicators (`#e2f705` and `#ffe600`) targeted for telemetry values, progress bars, dynamic status badges, and rapid visual confirmation.
+- **Text & Foreground**: Crisp cool-tinted whites (`#f3f1f7`) for primary labels, stepping down to muted lilac-ash tones (`#9b92aa` and `#625973`) for secondary and tertiary copy.
+
+## Typography
+Typographic rhythm relies on the structural precision of `Inter` for interfaces and headlines, paired alongside `JetBrains Mono` for metadata, readouts, labels, and analytical metrics. 
+
+- Maintain tight letter-spacing on headlines to generate punchy, condensed titles.
+- Use mono-spaced labels in uppercase to evoke instrument panels and telemetry monitors.
+- Maintain high contrast between primary information layers (`#f3f1f7`) and secondary contextual text (`#9b92aa`). Avoid low-contrast text on critical metrics.
+
+## Layout & Spacing
+Layouts use an adaptable 12-column responsive fluid grid designed for dense information distribution without visual crowding.
+
+- **Mobile (< 768px)**: 4-column layout, 1rem margin, 1rem gutter. Structural elements stack vertically; metric strips overflow via horizontal pan.
+- **Tablet (768px - 1024px)**: 8-column layout, 2rem margin, 1.5rem gutter. Split panels activate for side-by-side analysis.
+- **Desktop (> 1024px)**: 12-column layout, 3rem margin, 2rem gutter. High-density data matrices, persistent side rails, and multi-pane control surfaces operate concurrently.
+- Maintain consistent internal component padding using the base 4px/8px modular scale (`space-xs` through `space-xl`) to anchor technical precision across all screens.
+
+## Elevation & Depth
+Depth is constructed through subtle chromatic stepping and ambient volumetric glows rather than traditional drop shadows:
+
+- **Surface Tiering**:
+  - `Base Floor`: Midnight Obsidian (`#0d0914`).
+  - `Surface 1 (Panels & Shells)`: Deep Violet (`#150f22`).
+  - `Surface 2 (Cards & Active Modules)`: Elevated Violet Container (`#1f1633`).
+- **Tactical Borders**: Boundaries rely on structural 1px hairline rules using dark olive tones (`#2a2e1d` and `#3c422a`) rather than dropshadow cutoffs.
+- **Glow & Bloom**: Interactive hot-states apply a controlled, localized photon glow (`0 0 16px rgba(255, 98, 0, 0.28)` for orange; `0 0 16px rgba(226, 247, 5, 0.24)` for lime) to simulate active terminal hardware.
+
+## Shapes
+Geometry is disciplined, utilitarian, and firm. Sharp 4px corners (`roundedness: 1`) govern buttons, cards, containers, and inputs, rejecting fluid bulbous contours in favor of an engineered hardware chassis profile.
+
+- Default containers and inputs use `0.25rem` (4px).
+- Larger modal surfaces and floating overlays utilize `0.5rem` (8px).
+- Badges and status pills retain clean, compact boundaries without full stadium curvature to sustain the tactical identity.
+
+## Components
+
+### Buttons
+- **Primary**: Background `#ff6200`, text `#0d0914`, bold mono font. On hover, background shifts to `#ff7700` with an ambient glow (`box-shadow: 0 0 14px rgba(255, 98, 0, 0.4)`).
+- **Secondary / Tactical**: Background `#1f1633`, border `1px solid #3c422a`, text `#f3f1f7`. On hover, border illuminates to `#e2f705` and text brightens.
+- **Ghost**: Background transparent, text `#9b92aa`. On hover, text turns `#ff6200` with subtle `#1f1633` background fill.
+
+### Metric Indicators & Chips
+- **Status Badges**: Semi-translucent dark olive background (`rgba(42, 46, 29, 0.6)`), border `1px solid #3c422a`, monospaced typography.
+- **Telemetry Indicators**: For key performance readings, use neon lime (`#e2f705`) text accents alongside miniature 6px indicator dots pulsing with matching box-shadow.
+
+### Inputs & Select Fields
+- Base: Surface fill `#150f22`, structural border `1px solid #2a2e1d`, text `#f3f1f7`, placeholder `#625973`.
+- Active / Focused: Border switches crisply to `#ff6200`, accompanied by an outer hairline ring (`0 0 0 1px #ff6200`).
+
+### Checkboxes & Radios
+- Unselected: Square frame with 2px radius, `#1f1633` fill, `#3c422a` border.
+- Selected: Background transitions to `#ff6200` with dark obsidian `#0d0914` check icon, surrounded by an active glow.
+
+### Cards & Container Panels
+- Surface `#150f22` with a 1px exterior rim of `#2a2e1d`. 
+- High-priority cards feature an anchored 2px neon accent along their top or leading border in either `#ff6200` or `#e2f705` to denote alert states or critical path items.
+
+### Data Tables & Feed Lists
+- Alternating rows using `#150f22` and `#1a1329`. Row borders defined by hairline `#2a2e1d`.
+- Active/selected rows highlight with a vertical leading indicator in `#e2f705` and subtle full-row tinting.

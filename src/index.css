@@ -1,0 +1,199 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+@layer base {
+  :root {
+    --font-display: 'Bricolage Grotesque', system-ui, sans-serif;
+    --font-body: 'DM Sans', system-ui, sans-serif;
+    --font-mono: 'JetBrains Mono', monospace;
+
+    /* Default Light Mode tokens */
+    --bg-canvas: #f8fafc;
+    --bg-surface-lowest: #f1f5f9;
+    --bg-surface-low: #f8fafc;
+    --bg-surface: #ffffff;
+    --bg-surface-high: #f1f5f9;
+    --bg-surface-highest: #e2e8f0;
+    --text-primary: #0f172a;
+    --text-secondary: #475569;
+    --text-muted: #94a3b8;
+    --border-subtle: #e2e8f0;
+    --border-strong: #cbd5e1;
+    --status-error: #ef4444;
+    --status-error-bg: #fee2e2;
+
+    /* Default Blue Accent in Light */
+    --accent-primary: #0284c7;
+    --accent-primary-text: #ffffff;
+    --accent-container: #0369a1;
+    --accent-secondary: #10b981;
+    --accent-secondary-container: #d1fae5;
+    --accent-tertiary: #6366f1;
+    --glow-primary: 0 0 16px rgba(2, 132, 199, 0.2);
+    --glow-accent: 0 0 16px rgba(16, 185, 129, 0.15);
+  }
+
+  /* Explicit Dark Mode tokens - True Jet Black */
+  [data-theme="dark"] {
+    --bg-canvas: #000000;
+    --bg-surface-lowest: #000000;
+    --bg-surface-low: #050505;
+    --bg-surface: #0a0a0a;
+    --bg-surface-high: #121212;
+    --bg-surface-highest: #1a1a1a;
+    --text-primary: #ffffff;
+    --text-secondary: #a1a1aa;
+    --text-muted: #71717a;
+    --border-subtle: rgba(255, 255, 255, 0.09);
+    --border-strong: rgba(255, 255, 255, 0.18);
+    --status-error: #f87171;
+    --status-error-bg: #450a0a;
+
+    /* Default Accent in Jet Black Dark */
+    --accent-primary: #38bdf8;
+    --accent-primary-text: #000000;
+    --accent-container: #0284c7;
+    --accent-secondary: #10b981;
+    --accent-secondary-container: #064e3b;
+    --accent-tertiary: #818cf8;
+    --glow-primary: 0 0 20px rgba(56, 189, 248, 0.3);
+    --glow-accent: 0 0 20px rgba(16, 185, 129, 0.2);
+  }
+
+
+  /* Accent Color Variants - Light */
+  [data-theme="light"][data-accent="emerald"] {
+    --accent-primary: #059669;
+    --accent-primary-text: #ffffff;
+    --accent-container: #047857;
+    --accent-secondary: #0284c7;
+    --glow-primary: 0 0 16px rgba(5, 150, 105, 0.2);
+  }
+  [data-theme="light"][data-accent="violet"] {
+    --accent-primary: #7c3aed;
+    --accent-primary-text: #ffffff;
+    --accent-container: #6d28d9;
+    --accent-secondary: #059669;
+    --glow-primary: 0 0 16px rgba(124, 58, 237, 0.2);
+  }
+  [data-theme="light"][data-accent="amber"] {
+    --accent-primary: #d97706;
+    --accent-primary-text: #ffffff;
+    --accent-container: #b45309;
+    --accent-secondary: #059669;
+    --glow-primary: 0 0 16px rgba(217, 119, 6, 0.2);
+  }
+  [data-theme="light"][data-accent="rose"] {
+    --accent-primary: #e11d48;
+    --accent-primary-text: #ffffff;
+    --accent-container: #be123c;
+    --accent-secondary: #7c3aed;
+    --glow-primary: 0 0 16px rgba(225, 29, 72, 0.2);
+  }
+  [data-theme="light"][data-accent="monochrome"] {
+    --accent-primary: #1e293b;
+    --accent-primary-text: #ffffff;
+    --accent-container: #334155;
+    --accent-secondary: #64748b;
+    --glow-primary: 0 0 16px rgba(30, 41, 59, 0.15);
+  }
+
+  /* Accent Color Variants - Dark */
+  [data-theme="dark"][data-accent="emerald"] {
+    --accent-primary: #00f5a0;
+    --accent-primary-text: #022617;
+    --accent-container: #059669;
+    --accent-secondary: #38bdf8;
+    --glow-primary: 0 0 20px rgba(0, 245, 160, 0.3);
+  }
+  [data-theme="dark"][data-accent="violet"] {
+    --accent-primary: #c084fc;
+    --accent-primary-text: #2e1065;
+    --accent-container: #9333ea;
+    --accent-secondary: #00f5a0;
+    --glow-primary: 0 0 20px rgba(192, 132, 252, 0.3);
+  }
+  [data-theme="dark"][data-accent="amber"] {
+    --accent-primary: #fbbf24;
+    --accent-primary-text: #451a03;
+    --accent-container: #d97706;
+    --accent-secondary: #00f5a0;
+    --glow-primary: 0 0 20px rgba(251, 191, 36, 0.3);
+  }
+  [data-theme="dark"][data-accent="rose"] {
+    --accent-primary: #fb7185;
+    --accent-primary-text: #4c0519;
+    --accent-container: #e11d48;
+    --accent-secondary: #c084fc;
+    --glow-primary: 0 0 20px rgba(251, 113, 133, 0.3);
+  }
+  [data-theme="dark"][data-accent="monochrome"] {
+    --accent-primary: #e2e8f0;
+    --accent-primary-text: #0f172a;
+    --accent-container: #64748b;
+    --accent-secondary: #94a3b8;
+    --glow-primary: 0 0 16px rgba(226, 232, 240, 0.2);
+  }
+
+  body {
+    background-color: var(--bg-canvas);
+    color: var(--text-primary);
+    font-family: var(--font-body);
+    transition: background-color 0.2s ease, color 0.2s ease;
+    letter-spacing: -0.01em;
+  }
+}
+
+/* Card sheen with clean light & dark adaptation */
+.card-sheen {
+  background-color: var(--bg-surface);
+  border-color: var(--border-subtle);
+  box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.05), 0 1px 2px -1px rgba(0, 0, 0, 0.05);
+}
+
+[data-theme="dark"] .card-sheen {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.025) 0%, rgba(255, 255, 255, 0) 100%), #0a0a0a;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  border-color: rgba(255, 255, 255, 0.09);
+}
+
+.card-sheen-high {
+  background-color: var(--bg-surface-high);
+  border-color: var(--border-subtle);
+}
+
+[data-theme="dark"] .card-sheen-high {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.035) 0%, rgba(255, 255, 255, 0) 100%), #121212;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.12);
+}
+
+
+/* Custom scrollbars */
+::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(148, 163, 184, 0.3);
+  border-radius: 4px;
+}
+[data-theme="dark"] ::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.14);
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(148, 163, 184, 0.5);
+}
+
+.font-heading {
+  font-family: var(--font-display);
+}
+
+.font-mono-num {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}

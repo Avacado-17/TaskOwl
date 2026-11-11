@@ -1,0 +1,1121 @@
+import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { User } from 'firebase/auth';
+import {
+  initAuth,
+  googleSignIn,
+  googleLogout,
+  getAccessToken,
+  setAccessTokenInMemory,
+} from './services/googleAuth';
+import {
+  fetchCalendarEvents,
+  createCalendarEvent,
+  deleteCalendarEvent,
+} from './services/calendarService';
+import { sendGmailAlert } from './services/emailService';
+import { sounds } from './services/soundEffects';
+import {
+  INITIAL_TASKS,
+  INITIAL_PREFERENCES,
+  INITIAL_LOGS,
+  INITIAL_NOTIFICATIONS,
+  DEFAULT_CUSTOMIZATION,
+} from './services/defaultData';
+import { applyThemeAndAccentToDom } from './services/colorUtils';
+import {
+  Task,
+  LaneType,
+  PriorityType,
+  ThemeMode,
+
+  DashboardCustomization,
+  AutomationPreferences,
+  AutomationLog,
+  InAppNotification,
+  GoogleCalendarEvent,
+} from './types';
+
+import { TopNav } from './components/TopNav';
+import { MainTableView } from './components/MainTableView';
+import { ExecutiveDashboard } from './components/ExecutiveDashboard';
+import { KanbanBoard } from './components/KanbanBoard';
+import { AutomationsHub } from './components/AutomationsHub';
+import { CalendarScheduleView } from './components/CalendarScheduleView';
+import { TaskModal } from './components/TaskModal';
+import { NotificationCenter } from './components/NotificationCenter';
+import { ConfirmationModal } from './components/ConfirmationModal';
+import { DashboardCustomizerModal } from './components/DashboardCustomizerModal';
+
+export default function App() {
+  // Dashboard & Theme Customization state (Dark/White theme, accents, widgets, density)
+  const [customization, setCustomization] = useState<DashboardCustomization>(() => {
+    const saved = localStorage.getItem('orchestrator_customization');
+    if (saved) {
+      try {
+        return JSON.parse(saved);
+      } catch {}
+    }
+    return DEFAULT_CUSTOMIZATION;
+  });
+
+  const [isCustomizerOpen, setIsCustomizerOpen] = useState(false);
+
+  // Active navigation tab (defaults to Monday.com format 'table' from screenshot)
+  const [activeTab, setActiveTab] = useState<'table' | 'dashboard' | 'kanban' | 'automations' | 'calendar'>('table');
+
+  // Booting Splash Screen state (ensures attached image is shown during load)
+  const [isBooting, setIsBooting] = useState(true);
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setIsBooting(false);
+    }, 700);
+    return () => clearTimeout(timer);
+  }, []);
+
+
+  // Check and purge legacy cached dummy data on launch
+  const [tasks, setTasks] = useState<Task[]>(() => {
+    try {
+      const cleanLaunch = localStorage.getItem('orchestrator_fresh_launch_v3');
+      if (!cleanLaunch) {
+        localStorage.removeItem('orchestrator_tasks');
+        localStorage.removeItem('orchestrator_logs');
+        localStorage.removeItem('orchestrator_notifs');
+        localStorage.removeItem('orchestrator_prefs');
+        localStorage.removeItem('orchestrator_fresh_launch_v1');
+        localStorage.removeItem('orchestrator_fresh_launch_v2');
+        localStorage.setItem('orchestrator_fresh_launch_v3', 'true');
+        return [];
+      }
+
+      const saved = localStorage.getItem('orchestrator_tasks');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) {
+          // Filter out any legacy dummy task remnants
+          const clean = parsed.filter(
+            (t: any) =>
+              !t.id?.startsWith('task-00') &&
+              !t.id?.startsWith('task-10') &&
+              t.title !== 'Horizon Essay Prize' &&
+              t.title !== 'Study Abroad Expo' &&
+              t.title !== 'Oxford Essay Prize' &&
+              t.title !== 'IMLC-International Machine Learning Conference' &&
+              t.title !== 'Veritas AI Hackathon' &&
+              t.title !== 'ThinkNeuro Research Internship' &&
+              t.title !== 'Migrate Payment Webhooks to Event-Driven Cloud Functions' &&
+              t.title !== 'Zero-Knowledge Proof Verification Benchmark for Auth Flow' &&
+              t.title !== 'Multi-Region PostgreSQL Replication & Failover Testing' &&
+              t.title !== 'Executive Telemetry Dashboard Real-Time WebSocket Channel' &&
+              t.title !== 'Automated Deadline Escalation Engine Unit & Integration Tests' &&
+              t.title !== 'Single-Sign-On & Google Workspace OAuth Scope Consent Audit'
+          );
+          return clean;
+        }
+      }
+    } catch {}
+    return INITIAL_TASKS;
+  });
+
+  // Automation Preferences
+  const [preferences, setPreferences] = useState<AutomationPreferences>(() => {
+    const saved = localStorage.getItem('orchestrator_prefs');
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        return parsed;
+      } catch {}
+    }
+    return INITIAL_PREFERENCES;
+  });
+
+  // Automation Execution Logs
+  const [logs, setLogs] = useState<AutomationLog[]>(() => {
+    try {
+      const cleanLaunch = localStorage.getItem('orchestrator_fresh_launch_v3');
+      if (!cleanLaunch) return [];
+
+      const saved = localStorage.getItem('orchestrator_logs');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) {
+          return parsed.filter((l: any) => !l.id?.startsWith('log-'));
+        }
+      }
+    } catch {}
+    return INITIAL_LOGS;
+  });
+
+  // In-app Notifications
+  const [notifications, setNotifications] = useState<InAppNotification[]>(() => {
+    try {
+      const cleanLaunch = localStorage.getItem('orchestrator_fresh_launch_v3');
+      if (!cleanLaunch) return [];
+
+      const saved = localStorage.getItem('orchestrator_notifs');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) {
+          return parsed.filter((n: any) => !n.id?.startsWith('notif-'));
+        }
+      }
+    } catch {}
+    return INITIAL_NOTIFICATIONS;
+  });
+
+  // User and Auth State
+  const [user, setUser] = useState<User | null>(null);
+  const [calendarEvents, setCalendarEvents] = useState<GoogleCalendarEvent[]>([]);
+  const [isLoadingEvents, setIsLoadingEvents] = useState(false);
+
+  // Modals & Panels
+  const [isTaskModalOpen, setIsTaskModalOpen] = useState(false);
+  const [editingTask, setEditingTask] = useState<Task | null>(null);
+  const [defaultModalLane, setDefaultModalLane] = useState<LaneType>('backlog');
+  const [isNotificationCenterOpen, setIsNotificationCenterOpen] = useState(false);
+  const [deleteConfirmation, setDeleteConfirmation] = useState<{
+    isOpen: boolean;
+    task: Task | null;
+  }>({ isOpen: false, task: null });
+
+  // Toast banner
+  const [bannerNotice, setBannerNotice] = useState<{
+    message: string;
+    type: 'success' | 'warning' | 'info';
+  } | null>(null);
+
+  // Apply theme & accent to document root
+  useEffect(() => {
+    applyThemeAndAccentToDom(customization.themeMode, customization.accentColor);
+    localStorage.setItem('orchestrator_customization', JSON.stringify(customization));
+  }, [customization]);
+
+
+
+  // Persist tasks
+  useEffect(() => {
+    localStorage.setItem('orchestrator_tasks', JSON.stringify(tasks));
+  }, [tasks]);
+
+  // Persist preferences
+  useEffect(() => {
+    localStorage.setItem('orchestrator_prefs', JSON.stringify(preferences));
+  }, [preferences]);
+
+  // Persist logs
+  useEffect(() => {
+    localStorage.setItem('orchestrator_logs', JSON.stringify(logs));
+  }, [logs]);
+
+  // Persist notifications
+  useEffect(() => {
+    localStorage.setItem('orchestrator_notifs', JSON.stringify(notifications));
+  }, [notifications]);
+
+  const showBanner = (message: string, type: 'success' | 'warning' | 'info' = 'success') => {
+    setBannerNotice({ message, type });
+    setTimeout(() => {
+      setBannerNotice(null);
+    }, 4500);
+  };
+
+  // Google Calendar fetch helper
+  const loadCalendarEvents = useCallback(async (token: string) => {
+    setIsLoadingEvents(true);
+    try {
+      const events = await fetchCalendarEvents(token);
+      setCalendarEvents(events);
+    } catch (err) {
+      console.error('Failed to load Google Calendar events:', err);
+    } finally {
+      setIsLoadingEvents(false);
+    }
+  }, []);
+
+  // Initialize Firebase Auth listener
+  useEffect(() => {
+    const unsubscribe = initAuth(
+      (currentUser, token) => {
+        setUser(currentUser);
+        if (currentUser?.email) {
+          setPreferences((prev) => ({
+            ...prev,
+            recipientEmail: currentUser.email || '',
+          }));
+        }
+        loadCalendarEvents(token);
+      },
+      () => {
+        setUser(null);
+        setPreferences((prev) => ({
+          ...prev,
+          recipientEmail: '',
+        }));
+      }
+    );
+    return () => unsubscribe();
+  }, [loadCalendarEvents]);
+
+  // Synchronize recipient email whenever signed-in Google user email updates
+  useEffect(() => {
+    if (user?.email) {
+      setPreferences((prev) => {
+        if (!prev.recipientEmail || prev.recipientEmail !== user.email) {
+          return { ...prev, recipientEmail: user.email! };
+        }
+        return prev;
+      });
+    }
+  }, [user?.email]);
+
+  // Sign In with Google
+  const handleSignIn = async () => {
+    try {
+      const res = await googleSignIn();
+      if (res) {
+        setUser(res.user);
+        if (res.user.email) {
+          setPreferences((prev) => ({
+            ...prev,
+            recipientEmail: res.user.email || '',
+          }));
+        }
+        showBanner(`Connected to Google Workspace as ${res.user.displayName || res.user.email}`);
+        await loadCalendarEvents(res.accessToken);
+      }
+    } catch (err: any) {
+      console.error('Sign in error:', err);
+      showBanner(err?.message || 'Google Sign-in failed', 'warning');
+    }
+  };
+
+  // Sign Out
+  const handleSignOut = async () => {
+    await googleLogout();
+    setUser(null);
+    setPreferences((prev) => ({
+      ...prev,
+      recipientEmail: '',
+    }));
+    setCalendarEvents([]);
+    showBanner('Disconnected from Google Workspace', 'info');
+  };
+
+  // Toggle Theme (Dark vs White / Light)
+  const handleToggleTheme = () => {
+    setCustomization((prev) => {
+      const nextMode: ThemeMode = prev.themeMode === 'dark' ? 'light' : 'dark';
+      showBanner(`Switched to ${nextMode === 'dark' ? 'Dark' : 'White'} theme`);
+      return {
+        ...prev,
+        themeMode: nextMode,
+      };
+    });
+  };
+
+  const handleUpdateCustomization = (updates: Partial<DashboardCustomization>) => {
+    setCustomization((prev) => ({
+      ...prev,
+      ...updates,
+      ...(updates.visibleWidgets
+        ? {
+            visibleWidgets: {
+              ...prev.visibleWidgets,
+              ...updates.visibleWidgets,
+            },
+          }
+        : {}),
+    }));
+  };
+
+  const handleResetCustomization = () => {
+    setCustomization(DEFAULT_CUSTOMIZATION);
+    showBanner('Reset dashboard preferences to default', 'info');
+  };
+
+
+  // Add Log Entry
+  const addLog = useCallback(
+    (ruleName: string, details: string, status: 'success' | 'warning' | 'info', taskTitle?: string, taskId?: string) => {
+      const newLog: AutomationLog = {
+        id: `log-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
+        ruleName,
+        details,
+        status,
+        taskTitle,
+        taskId,
+        triggeredAt: new Date().toISOString(),
+      };
+      setLogs((prev) => [newLog, ...prev.slice(0, 49)]);
+    },
+    []
+  );
+
+  // Add Notification Entry
+  const addNotification = useCallback(
+    (
+      title: string,
+      message: string,
+      type: InAppNotification['type'],
+      taskId?: string
+    ) => {
+      const newNotif: InAppNotification = {
+        id: `notif-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
+        title,
+        message,
+        type,
+        taskId,
+        timestamp: new Date().toISOString(),
+        read: false,
+      };
+      setNotifications((prev) => [newNotif, ...prev]);
+    },
+    []
+  );
+
+  // Heartbeat Automation Engine Runner (Auto 48h & 24h Gmail Alerts)
+  const runHeartbeat = useCallback(async () => {
+    const now = Date.now();
+    let updatedTasks = false;
+    const taskUpdates = [...tasks];
+    const token = await getAccessToken();
+
+    for (let idx = 0; idx < taskUpdates.length; idx++) {
+      const task = taskUpdates[idx];
+      if (task.lane === 'done') continue;
+
+      const deadlineMs = new Date(task.deadline).getTime();
+      const diffHours = (deadlineMs - now) / (1000 * 60 * 60);
+
+      // Check 1: 48-Hour Advance Email Reminder
+      if (diffHours > 24 && diffHours <= 48 && !task.email48hSent) {
+        taskUpdates[idx] = { ...taskUpdates[idx], email48hSent: true };
+        updatedTasks = true;
+
+        const recipient = preferences.recipientEmail || user?.email;
+        if (token && recipient) {
+          try {
+            await sendGmailAlert(
+              token,
+              recipient,
+              `[48-Hour Reminder] Deliverable "${task.title}" is due in 2 days`,
+              `<div style="font-family: sans-serif; background: #000; color: #f8fafc; padding: 24px; border-radius: 12px; border: 1px solid #334155;">
+                <h2 style="color: #38bdf8; margin-top: 0;">48-Hour Deadline Reminder</h2>
+                <p>Your deliverable <strong>${task.title}</strong> is scheduled for completion in <strong>2 days</strong>.</p>
+                <div style="margin: 16px 0; padding: 16px; background: #0f172a; border-radius: 8px; border: 1px solid #1e293b;">
+                  <p style="margin: 4px 0;"><strong>Deadline:</strong> ${new Date(task.deadline).toLocaleString([], { weekday: 'short', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</p>
+                  <p style="margin: 4px 0;"><strong>Priority:</strong> ${task.priority.toUpperCase()}</p>
+                  <p style="margin: 4px 0;"><strong>Owner:</strong> ${task.assignee?.name}</p>
+                </div>
+                <p style="font-size: 12px; color: #94a3b8;">Automated reminder dispatched via Google Workspace Gmail API.</p>
+              </div>`
+            );
+            addLog(
+              '48-Hour Automated Email Reminder',
+              `Sent 48-hour advance deadline email alert for "${task.title}" to ${recipient}.`,
+              'success',
+              task.title,
+              task.id
+            );
+          } catch (e: any) {
+            console.error('Failed to dispatch 48h email alert:', e);
+          }
+        }
+      }
+
+      // Check 2: 24-Hour Urgent Email Reminder
+      if (diffHours > 0 && diffHours <= 24 && !task.email24hSent) {
+        taskUpdates[idx] = { ...taskUpdates[idx], email24hSent: true };
+        updatedTasks = true;
+
+        const recipient = preferences.recipientEmail || user?.email;
+        if (token && recipient) {
+          try {
+            await sendGmailAlert(
+              token,
+              recipient,
+              `[24-Hour Urgent Warning] Deliverable "${task.title}" is due tomorrow`,
+              `<div style="font-family: sans-serif; background: #000; color: #f8fafc; padding: 24px; border-radius: 12px; border: 1px solid #ef4444;">
+                <h2 style="color: #ef4444; margin-top: 0;">24-Hour Urgent Deadline Warning</h2>
+                <p>Urgent alert: Your deliverable <strong>${task.title}</strong> is due in <strong>less than 24 hours</strong>!</p>
+                <div style="margin: 16px 0; padding: 16px; background: #1e1015; border-radius: 8px; border: 1px solid #881337;">
+                  <p style="margin: 4px 0; color: #f87171;"><strong>Deadline:</strong> ${new Date(task.deadline).toLocaleString([], { weekday: 'short', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</p>
+                  <p style="margin: 4px 0;"><strong>Priority:</strong> URGENT</p>
+                  <p style="margin: 4px 0;"><strong>Owner:</strong> ${task.assignee?.name}</p>
+                </div>
+                <p style="font-size: 12px; color: #94a3b8;">Automated urgent reminder dispatched via Google Workspace Gmail API.</p>
+              </div>`
+            );
+            addLog(
+              '24-Hour Automated Email Warning',
+              `Sent 24-hour urgent deadline warning email for "${task.title}" to ${recipient}.`,
+              'warning',
+              task.title,
+              task.id
+            );
+          } catch (e: any) {
+            console.error('Failed to dispatch 24h email alert:', e);
+          }
+        }
+      }
+
+      // Check 3: Auto-escalate threshold (<4h by default)
+      if (
+        preferences.autoEscalateOverdue &&
+        diffHours > 0 &&
+        diffHours <= preferences.autoEscalateHoursThreshold &&
+        task.priority !== 'urgent'
+      ) {
+        taskUpdates[idx] = {
+          ...taskUpdates[idx],
+          priority: 'urgent',
+          escalated: true,
+        };
+        updatedTasks = true;
+
+        if (preferences.audioChimesEnabled) {
+          sounds.playUrgentAlert();
+        }
+
+        addLog(
+          'Auto-Escalation Engine',
+          `Task deadline is within ${preferences.autoEscalateHoursThreshold}h (due in ${diffHours.toFixed(1)}h). Priority promoted to URGENT.`,
+          'warning',
+          task.title,
+          task.id
+        );
+
+        addNotification(
+          'Auto-Escalated to Urgent',
+          `"${task.title}" is due in ${diffHours.toFixed(1)} hours and was automatically promoted to Urgent status.`,
+          'escalation',
+          task.id
+        );
+      }
+    }
+
+    if (updatedTasks) {
+      setTasks(taskUpdates);
+    }
+  }, [tasks, preferences, user, addLog, addNotification]);
+
+  // Run heartbeat on interval (30 seconds)
+  useEffect(() => {
+    const timer = setInterval(() => {
+      runHeartbeat();
+    }, 30000);
+    return () => clearInterval(timer);
+  }, [runHeartbeat]);
+
+  // Synchronize single task to Google Calendar
+  const handleSyncTaskToCalendar = async (task: Task) => {
+    const token = await getAccessToken();
+    if (!token || !user) {
+      // Prompt user to sign in
+      showBanner('Please connect your Google account in the top bar to sync with Google Calendar.', 'warning');
+      return;
+    }
+
+    try {
+      const result = await createCalendarEvent(token, task, preferences.calendarReminderMinutes);
+      setTasks((prev) =>
+        prev.map((t) =>
+          t.id === task.id
+            ? {
+                ...t,
+                syncedToCalendar: true,
+                calendarEventId: result.id,
+                calendarEventUrl: result.htmlLink,
+              }
+            : t
+        )
+      );
+
+      if (preferences.audioChimesEnabled) {
+        sounds.playCalendarSyncChime();
+      }
+
+      addLog(
+        'Google Calendar Sync',
+        `Successfully synced event with ${preferences.calendarReminderMinutes}m popup alert.`,
+        'success',
+        task.title,
+        task.id
+      );
+
+      addNotification(
+        'Synced to Google Calendar',
+        `"${task.title}" is now on your Google Calendar with reminders.`,
+        'calendar_sync',
+        task.id
+      );
+
+      showBanner(`"${task.title}" synced to Google Calendar.`);
+      await loadCalendarEvents(token);
+    } catch (err: any) {
+      console.error('Calendar sync error:', err);
+      showBanner(`Calendar sync failed: ${err?.message || 'Check permissions'}`, 'warning');
+    }
+  };
+
+  // Dispatch all unsynced upcoming deliverables to Google Calendar
+  const handleDispatchAllToCalendar = async () => {
+    const token = await getAccessToken();
+    if (!token || !user) {
+      showBanner('Please sign in with Google in the top bar to sync all deliverables.', 'warning');
+      return;
+    }
+
+    const unsynced = tasks.filter((t) => !t.syncedToCalendar && t.lane !== 'done');
+    if (unsynced.length === 0) {
+      showBanner('All upcoming deliverables are already synced to Google Calendar.', 'info');
+      return;
+    }
+
+    let successCount = 0;
+    const updated = [...tasks];
+
+    for (const item of unsynced) {
+      try {
+        const res = await createCalendarEvent(token, item, preferences.calendarReminderMinutes);
+        const idx = updated.findIndex((t) => t.id === item.id);
+        if (idx !== -1) {
+          updated[idx] = {
+            ...updated[idx],
+            syncedToCalendar: true,
+            calendarEventId: res.id,
+            calendarEventUrl: res.htmlLink,
+          };
+          successCount++;
+        }
+      } catch (e) {
+        console.error('Batch sync error for task:', item.title, e);
+      }
+    }
+
+    setTasks(updated);
+    if (preferences.audioChimesEnabled) {
+      sounds.playSuccessChime();
+    }
+    showBanner(`Successfully synced ${successCount} deliverable(s) to Google Calendar.`);
+    await loadCalendarEvents(token);
+  };
+
+  // Send real Morning Executive Digest via Gmail API
+  const handleSendMorningDigestEmail = async () => {
+    const token = await getAccessToken();
+    if (!token || !user) {
+      showBanner('Connect Google Workspace in the top bar to send real Gmail digests.', 'warning');
+      return;
+    }
+
+    const recipient = preferences.recipientEmail || user?.email;
+    if (!recipient) {
+      showBanner('Please connect your Google account or provide a recipient email address.', 'warning');
+      return;
+    }
+    const upcoming = tasks.filter((t) => t.lane !== 'done');
+    const urgent = upcoming.filter((t) => t.priority === 'urgent');
+
+    const htmlBody = `
+      <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; max-width: 600px; margin: 0 auto; background: #000000; color: #f8fafc; padding: 24px; border-radius: 8px; border: 1px solid #334155;">
+        <h2 style="color: #ef4444; margin-top: 0;">Oculis | Daily Executive Digest</h2>
+        <p style="font-size: 14px; color: #94a3b8;">Here is your executive deliverable briefing for <strong>${new Date().toLocaleDateString([], { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}</strong>.</p>
+        
+        <div style="margin: 20px 0; padding: 16px; background: #0f172a; border-radius: 6px; border: 1px solid #1e293b;">
+          <h3 style="margin-top: 0; font-size: 14px; color: #38bdf8;">Executive Summary</h3>
+          <p style="font-size: 13px; line-height: 1.5; margin: 0; color: #e2e8f0;">You have <strong>${upcoming.length} open deliverables</strong> scheduled across active sprints, with <strong>${urgent.length} marked urgent</strong>.</p>
+        </div>
+
+        <h3 style="font-size: 14px; color: #38bdf8; margin-top: 24px;">Active Deliverables</h3>
+        <table style="width: 100%; text-align: left; border-collapse: collapse; font-size: 12px;">
+          <thead>
+            <tr style="border-bottom: 1px solid #334155; color: #94a3b8;">
+              <th style="padding: 8px 4px;">Task</th>
+              <th style="padding: 8px 4px;">Priority</th>
+              <th style="padding: 8px 4px;">Deadline</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${upcoming
+              .slice(0, 8)
+              .map(
+                (t) => `
+              <tr style="border-bottom: 1px solid #1e293b;">
+                <td style="padding: 10px 4px; color: #f8fafc;"><strong>${t.title}</strong></td>
+                <td style="padding: 10px 4px; color: ${t.priority === 'urgent' ? '#ef4444' : '#38bdf8'}; text-transform: uppercase;">${t.priority}</td>
+                <td style="padding: 10px 4px; color: #cbd5e1;">${new Date(t.deadline).toLocaleDateString([], { month: 'short', day: 'numeric' })} ${new Date(t.deadline).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</td>
+              </tr>
+            `
+              )
+              .join('')}
+          </tbody>
+        </table>
+
+        <p style="font-size: 11px; color: #64748b; margin-top: 32px; border-top: 1px solid #1e293b; padding-top: 16px;">
+          Dispatched in real-time by Oculis.
+        </p>
+      </div>
+    `;
+
+    await sendGmailAlert(
+      token,
+      recipient,
+      `[Oculis Executive Digest] Deliverable Summary for ${new Date().toLocaleDateString([], { month: 'short', day: 'numeric' })}`,
+      htmlBody
+    );
+
+    addLog(
+      'Daily Morning Executive Digest',
+      `Dispatched real-time Gmail digest to ${recipient}.`,
+      'success'
+    );
+
+    addNotification(
+      'Morning Digest Dispatched',
+      `Delivered sprint digest to ${recipient} via Gmail.`,
+      'email_sent'
+    );
+  };
+
+  // Save Task (Create or Update)
+  const handleSaveTask = async (taskData: Partial<Task>, syncDirectly: boolean) => {
+    if (editingTask) {
+      // Update
+      const updated = tasks.map((t) =>
+        t.id === editingTask.id ? ({ ...t, ...taskData } as Task) : t
+      );
+      setTasks(updated);
+      showBanner(`Updated "${taskData.title}"`);
+
+      // If user toggled sync on edit
+      if (syncDirectly && !editingTask.syncedToCalendar) {
+        const found = updated.find((t) => t.id === editingTask.id);
+        if (found) await handleSyncTaskToCalendar(found);
+      }
+    } else {
+      // Create new
+      const newTask: Task = {
+        id: `task-${Date.now()}`,
+        title: taskData.title || 'Untitled Deliverable',
+        description: taskData.description || '',
+        lane: taskData.lane || defaultModalLane,
+        priority: taskData.priority || 'medium',
+        originalPriority: taskData.priority || 'medium',
+        deadline: taskData.deadline || new Date(Date.now() + 24 * 3600 * 1000).toISOString(),
+        estimatedHours: taskData.estimatedHours || 2,
+        assignee: taskData.assignee || {
+          name: user?.displayName || 'Lead Architect',
+          role: 'Staff Architect',
+          initials: (user?.displayName || 'Lead Architect')
+            .split(' ')
+            .map((n) => n[0])
+            .join('')
+            .toUpperCase()
+            .slice(0, 2),
+        },
+        tags: taskData.tags || ['Agile'],
+        syncedToCalendar: false,
+        escalated: false,
+        createdAt: new Date().toISOString(),
+      };
+
+      setTasks((prev) => [newTask, ...prev]);
+      showBanner(`Created deliverable "${newTask.title}"`);
+
+      if (syncDirectly) {
+        await handleSyncTaskToCalendar(newTask);
+      }
+    }
+  };
+
+  // Move task lane in Kanban
+  const handleUpdateTaskLane = (taskId: string, newLane: LaneType) => {
+    setTasks((prev) =>
+      prev.map((t) =>
+        t.id === taskId
+          ? {
+              ...t,
+              lane: newLane,
+              completedAt: newLane === 'done' ? new Date().toISOString() : undefined,
+            }
+          : t
+      )
+    );
+  };
+
+  // Inline quick task add from MainTableView
+  const handleAddNewTaskInline = (
+    title: string,
+    lane: LaneType = 'backlog',
+    priority: PriorityType = 'medium',
+    dueDate?: string
+  ) => {
+    const newTask: Task = {
+      id: `task-${Date.now()}`,
+      title,
+      description: '',
+      lane,
+      priority,
+      originalPriority: priority,
+      deadline: dueDate || new Date(Date.now() + 7 * 24 * 3600 * 1000).toISOString(),
+      estimatedHours: 2,
+      assignee: {
+        name: user?.displayName || 'Workspace Owner',
+        role: 'Owner',
+        initials: (user?.displayName || 'Workspace Owner')
+          .split(' ')
+          .map((n) => n[0])
+          .join('')
+          .toUpperCase()
+          .slice(0, 2),
+      },
+      tags: ['Daily Life'],
+      syncedToCalendar: false,
+      escalated: false,
+      createdAt: new Date().toISOString(),
+    };
+    setTasks((prev) => [newTask, ...prev]);
+    showBanner(`Created "${title}"`);
+  };
+
+  // Direct priority toggle from MainTableView
+  const handleUpdateTaskPriority = (taskId: string, newPriority: PriorityType) => {
+    setTasks((prev) =>
+      prev.map((t) => (t.id === taskId ? { ...t, priority: newPriority } : t))
+    );
+    showBanner(`Updated priority to ${newPriority.toUpperCase()}`);
+  };
+
+  // Reschedule deadline (e.g., drag and drop on calendar view)
+  const handleUpdateTaskDeadline = (taskId: string, newDeadlineIso: string) => {
+    setTasks((prev) =>
+      prev.map((t) => (t.id === taskId ? { ...t, deadline: newDeadlineIso } : t))
+    );
+    const dateStr = new Date(newDeadlineIso).toLocaleDateString([], { month: 'short', day: 'numeric' });
+    showBanner(`Rescheduled task to ${dateStr}`);
+  };
+
+  // Reorder tasks in list via drag and drop
+  const handleReorderTasks = (draggedTaskId: string, targetTaskId: string) => {
+    setTasks((prev) => {
+      const draggedIdx = prev.findIndex((t) => t.id === draggedTaskId);
+      const targetIdx = prev.findIndex((t) => t.id === targetTaskId);
+      if (draggedIdx === -1 || targetIdx === -1 || draggedIdx === targetIdx) return prev;
+
+      const next = [...prev];
+      const [removed] = next.splice(draggedIdx, 1);
+      next.splice(targetIdx, 0, removed);
+      return next;
+    });
+  };
+
+  // Delete task with confirmation
+
+
+  const handleConfirmDelete = async () => {
+    if (!deleteConfirmation.task) return;
+    const taskToDelete = deleteConfirmation.task;
+
+    // If synced to Google Calendar, remove event if token is available
+    if (taskToDelete.syncedToCalendar && taskToDelete.calendarEventId) {
+      const token = await getAccessToken();
+      if (token) {
+        try {
+          await deleteCalendarEvent(token, taskToDelete.calendarEventId);
+        } catch (e) {
+          console.warn('Failed to delete Google Calendar event:', e);
+        }
+      }
+    }
+
+    setTasks((prev) => prev.filter((t) => t.id !== taskToDelete.id));
+    showBanner(`Deleted "${taskToDelete.title}"`, 'info');
+    setDeleteConfirmation({ isOpen: false, task: null });
+  };
+
+  if (isBooting) {
+    return (
+      <div className="min-h-screen bg-black flex flex-col items-center justify-center p-6 select-none animate-in fade-in duration-300">
+        <div className="relative group">
+          <div className="absolute -inset-4 bg-red-600/25 rounded-3xl blur-2xl animate-pulse" />
+          <div className="relative w-36 h-36 sm:w-44 sm:h-44 rounded-2xl overflow-hidden border border-red-500/40 shadow-2xl shadow-red-950/70 ring-1 ring-white/10">
+            <img
+              src="/assets/oculis/logo.jpg"
+              alt="Oculis"
+              className="w-full h-full object-cover"
+            />
+          </div>
+        </div>
+        <div className="mt-7 flex flex-col items-center gap-3">
+          <div className="w-36 h-1 bg-white/10 rounded-full overflow-hidden relative">
+            <div className="absolute inset-y-0 left-0 w-1/2 bg-red-500 rounded-full animate-pulse" />
+          </div>
+          <span className="text-[11px] font-mono text-zinc-400 font-semibold tracking-widest uppercase">
+            Booting Workspace...
+          </span>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen flex flex-col transition-colors duration-200">
+      {/* Toast Notification Banner */}
+      {bannerNotice && (
+        <div className="fixed bottom-5 right-5 z-50 flex items-center gap-3 px-4 py-2.5 rounded-lg border border-[var(--border-strong)] bg-[var(--bg-surface)] text-xs font-medium text-[var(--text-primary)] shadow-2xl animate-in slide-in-from-bottom-2 duration-150">
+          <span
+            className={`w-2 h-2 rounded-full ${
+              bannerNotice.type === 'warning'
+                ? 'bg-amber-400'
+                : bannerNotice.type === 'info'
+                ? 'bg-[var(--accent-secondary)]'
+                : 'bg-[var(--accent-primary)]'
+            }`}
+          />
+          <span>{bannerNotice.message}</span>
+        </div>
+      )}
+
+      {/* Strict 3-Zone Top Navigation Bar */}
+      <TopNav
+        activeTab={activeTab}
+        onSelectTab={setActiveTab}
+        theme={customization.themeMode}
+        accentColor={customization.accentColor}
+        onToggleTheme={handleToggleTheme}
+        onOpenCustomizer={() => setIsCustomizerOpen(true)}
+
+        user={user}
+        onSignIn={handleSignIn}
+        onSignOut={handleSignOut}
+        unreadCount={notifications.filter((n) => !n.read).length}
+        onOpenNotifications={() => setIsNotificationCenterOpen(true)}
+        onOpenNewTaskModal={() => {
+          setEditingTask(null);
+          setDefaultModalLane('backlog');
+          setIsTaskModalOpen(true);
+        }}
+      />
+
+      {/* Main Content Viewport */}
+      <main className="flex-1 max-w-[1600px] w-full mx-auto p-4 sm:p-6 lg:p-8">
+        {activeTab === 'table' && (
+          <MainTableView
+            tasks={tasks}
+            customization={customization}
+            isGoogleConnected={!!user}
+            onUpdateTaskLane={handleUpdateTaskLane}
+            onUpdateTaskPriority={handleUpdateTaskPriority}
+            onSyncTaskToCalendar={handleSyncTaskToCalendar}
+            onEditTask={(task) => {
+              setEditingTask(task);
+              setIsTaskModalOpen(true);
+            }}
+            onRequestDeleteTask={(task) => {
+              setDeleteConfirmation({ isOpen: true, task });
+            }}
+            onAddNewTaskInline={handleAddNewTaskInline}
+            onOpenNewTaskModal={(defaultLane = 'backlog') => {
+              setEditingTask(null);
+              setDefaultModalLane(defaultLane);
+              setIsTaskModalOpen(true);
+            }}
+            onNavigateToAutomations={() => setActiveTab('automations')}
+            onNavigateToCalendar={() => setActiveTab('calendar')}
+          />
+        )}
+
+        {activeTab === 'dashboard' && (
+          <ExecutiveDashboard
+            tasks={tasks}
+            preferences={preferences}
+            logs={logs}
+            customization={customization}
+            isGoogleConnected={!!user}
+            onSyncTaskToCalendar={handleSyncTaskToCalendar}
+            onDispatchAllToCalendar={handleDispatchAllToCalendar}
+            onSendMorningDigestEmail={handleSendMorningDigestEmail}
+            onNavigateToKanban={() => setActiveTab('kanban')}
+            onNavigateToAutomations={() => setActiveTab('automations')}
+            onNavigateToCalendar={() => setActiveTab('calendar')}
+            onEditTask={(task) => {
+              setEditingTask(task);
+              setIsTaskModalOpen(true);
+            }}
+            onOpenCustomizer={() => setIsCustomizerOpen(true)}
+            onUpdateCustomization={handleUpdateCustomization}
+          />
+        )}
+
+        {activeTab === 'kanban' && (
+          <KanbanBoard
+            tasks={tasks}
+            customization={customization}
+            onUpdateTaskLane={handleUpdateTaskLane}
+            onEditTask={(task) => {
+              setEditingTask(task);
+              setIsTaskModalOpen(true);
+            }}
+            onRequestDeleteTask={(task) => {
+              setDeleteConfirmation({ isOpen: true, task });
+            }}
+            onSyncTaskToCalendar={handleSyncTaskToCalendar}
+            onOpenNewTaskModal={(defaultLane = 'backlog') => {
+              setEditingTask(null);
+              setDefaultModalLane(defaultLane);
+              setIsTaskModalOpen(true);
+            }}
+            onUpdateCustomization={handleUpdateCustomization}
+            onReorderTasks={handleReorderTasks}
+          />
+        )}
+
+        {activeTab === 'automations' && (
+          <AutomationsHub
+            preferences={preferences}
+            onUpdatePreferences={(newPrefs) => {
+              setPreferences((prev) => ({ ...prev, ...newPrefs }));
+              showBanner('Automation preferences updated.');
+            }}
+            logs={logs}
+            onClearLogs={() => {
+              setLogs([]);
+              showBanner('Automation execution logs cleared.', 'info');
+            }}
+            onTriggerHeartbeatNow={() => {
+              runHeartbeat();
+              showBanner('Executed manual heartbeat check across all deliverables.');
+            }}
+            onSimulateAlarm={(type) => {
+              if (type === '1h') {
+                if (preferences.audioChimesEnabled) sounds.playUrgentAlert();
+                addLog('Simulated 1h Emergency Alarm', 'Manually triggered emergency alarm test.', 'warning');
+                addNotification('1-Hour Emergency Deadline Alarm', 'Simulated emergency deadline alert for testing.', 'emergency_1h');
+              } else if (type === '24h') {
+                addLog('Simulated 24h Impending Alert', 'Manually triggered 24h deliverable alert.', 'info');
+                addNotification('24-Hour Deliverable Approaching', 'Simulated 24-hour reminder alert for testing.', 'warning_24h');
+              } else {
+                addLog('Simulated Escalation', 'Manually triggered priority escalation test.', 'warning');
+                addNotification('Task Escalated to Urgent', 'Simulated auto-escalation trigger for testing.', 'escalation');
+              }
+              showBanner(`Triggered simulated ${type} alert.`);
+            }}
+            onSendTestEmail={async () => {
+              const token = await getAccessToken();
+              if (!token || !user) {
+                showBanner('Connect Google in the top bar to dispatch real emails.', 'warning');
+                return;
+              }
+              const recipient = preferences.recipientEmail || user?.email;
+              if (!recipient) {
+                showBanner('Please connect your Google account or enter a recipient email.', 'warning');
+                return;
+              }
+              await sendGmailAlert(
+                token,
+                recipient,
+                '[Test Alert] Oculis Automation Engine',
+                `<div style="font-family: sans-serif; background: #000000; color: #f8fafc; padding: 20px; border-radius: 8px; border: 1px solid #334155;">
+                  <h2 style="color: #ef4444;">Oculis Automation Engine Verification</h2>
+                  <p>This is a real-time test notification sent via Google Workspace Gmail API integration to ${recipient}.</p>
+                  <p>All automated deadline reminders will be routed to this inbox.</p>
+                </div>`
+              );
+              showBanner(`Test email sent to ${recipient}`);
+            }}
+            isGoogleConnected={!!user}
+            userEmail={user?.email || null}
+            tasks={tasks}
+          />
+        )}
+
+        {activeTab === 'calendar' && (
+          <CalendarScheduleView
+            tasks={tasks}
+            calendarEvents={calendarEvents}
+            isLoadingEvents={isLoadingEvents}
+            isGoogleConnected={!!user}
+            onRefreshEvents={async () => {
+              const token = await getAccessToken();
+              if (token) await loadCalendarEvents(token);
+            }}
+            onSyncTaskToCalendar={handleSyncTaskToCalendar}
+            onDispatchAllToCalendar={handleDispatchAllToCalendar}
+            onSignIn={handleSignIn}
+            onEditTask={(task) => {
+              setEditingTask(task);
+              setIsTaskModalOpen(true);
+            }}
+          />
+        )}
+      </main>
+
+      {/* Task Creation / Edit Modal */}
+      <TaskModal
+        isOpen={isTaskModalOpen}
+        onClose={() => {
+          setIsTaskModalOpen(false);
+          setEditingTask(null);
+        }}
+        onSave={handleSaveTask}
+        initialTask={editingTask}
+        isGoogleConnected={!!user}
+        defaultAssigneeName={user?.displayName || 'Lead Architect'}
+      />
+
+      {/* Notification Center Drawer */}
+      <NotificationCenter
+        isOpen={isNotificationCenterOpen}
+        onClose={() => setIsNotificationCenterOpen(false)}
+        notifications={notifications}
+        onMarkAsRead={(id) => {
+          setNotifications((prev) =>
+            prev.map((n) => (n.id === id ? { ...n, read: true } : n))
+          );
+        }}
+        onMarkAllAsRead={() => {
+          setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
+          showBanner('All notifications marked as read.', 'info');
+        }}
+        onClearAll={() => {
+          setNotifications([]);
+          showBanner('Notification history cleared.', 'info');
+        }}
+        onSelectTask={(taskId) => {
+          const t = tasks.find((item) => item.id === taskId);
+          if (t) {
+            setEditingTask(t);
+            setIsTaskModalOpen(true);
+          }
+        }}
+      />
+
+      {/* Destructive Operation Confirmation Modal */}
+      <ConfirmationModal
+        isOpen={deleteConfirmation.isOpen}
+        title="Delete Deliverable Task?"
+        message={
+          deleteConfirmation.task?.syncedToCalendar
+            ? `Are you sure you want to delete "${deleteConfirmation.task?.title}"? This will also remove the scheduled event from your Google Calendar.`
+            : `Are you sure you want to delete "${deleteConfirmation.task?.title}"? This action cannot be undone.`
+        }
+        confirmLabel="Delete Task"
+        isDestructive={true}
+        onConfirm={handleConfirmDelete}
+        onCancel={() => setDeleteConfirmation({ isOpen: false, task: null })}
+      />
+
+      {/* Dashboard & Theme Personalization Customizer Modal */}
+      <DashboardCustomizerModal
+        isOpen={isCustomizerOpen}
+        onClose={() => setIsCustomizerOpen(false)}
+        customization={customization}
+        onUpdateCustomization={handleUpdateCustomization}
+        onResetDefaults={handleResetCustomization}
+      />
+    </div>
+  );
+}
+
