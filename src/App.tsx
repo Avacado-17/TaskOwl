@@ -169,6 +169,19 @@ export default function App() {
   const [calendarEvents, setCalendarEvents] = useState<GoogleCalendarEvent[]>([]);
   const [isLoadingEvents, setIsLoadingEvents] = useState(false);
 
+  // Track event IDs that have already had reminders sent to avoid double-processing
+  const [externalEventsReminded, setExternalEventsReminded] = useState<Record<string, boolean>>(() => {
+    const saved = localStorage.getItem('taskowl_external_reminders');
+    if (saved) {
+      try {
+        return JSON.parse(saved);
+      } catch {
+        return {};
+      }
+    }
+    return {};
+  });
+
   // Modals & Panels
   const [isTaskModalOpen, setIsTaskModalOpen] = useState(false);
   const [editingTask, setEditingTask] = useState<Task | null>(null);
@@ -212,6 +225,10 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem('orchestrator_notifs', JSON.stringify(notifications));
   }, [notifications]);
+
+  useEffect(() => {
+    localStorage.setItem('taskowl_external_reminders', JSON.stringify(externalEventsReminded));
+  }, [externalEventsReminded]);
 
   const showBanner = (message: string, type: 'success' | 'warning' | 'info' = 'success') => {
     setBannerNotice({ message, type });
@@ -498,7 +515,73 @@ export default function App() {
     if (updatedTasks) {
       setTasks(taskUpdates);
     }
-  }, [tasks, preferences, user, addLog, addNotification]);
+
+    // Check for external calendar events that aren't task-synced
+    if (preferences.remindCalendarExternalEvents && calendarEvents.length > 0 && token) {
+      const recipient = preferences.recipientEmail || user?.email;
+      if (recipient) {
+        let remindedIds = { ...externalEventsReminded };
+        let changedReminders = false;
+
+        for (const evt of calendarEvents) {
+          // Skip if already reminded or if it's a task event (starts with [Task])
+          if (remindedIds[evt.id] || evt.summary.startsWith('[Task]')) continue;
+
+          // Check if this event ID is linked to any of our tasks
+          const isLinkedToTask = tasks.some(t => t.calendarEventId === evt.id);
+          if (isLinkedToTask) continue;
+
+          const startRaw = evt.start?.dateTime || evt.start?.date;
+          if (!startRaw) continue;
+
+          const startTime = new Date(startRaw).getTime();
+          const hrsToStart = (startTime - now) / (1000 * 60 * 60);
+
+          // Remind for external events due in 24 hours
+          if (hrsToStart > 0 && hrsToStart <= 24) {
+            try {
+              await sendGmailAlert(
+                token,
+                recipient,
+                `[Personal Calendar Alert] "${evt.summary}" is starting in less than 24 hours`,
+                `<div style="font-family: sans-serif; background: #000; color: #f8fafc; padding: 24px; border-radius: 12px; border: 1px solid #38bdf8;">
+                  <h2 style="color: #38bdf8; margin-top: 0;">Personal Calendar Reminder</h2>
+                  <p>Your calendar event <strong>${evt.summary}</strong> is starting <strong>tomorrow</strong>.</p>
+                  <div style="margin: 16px 0; padding: 16px; background: #0f172a; border-radius: 8px; border: 1px solid #1e293b;">
+                    <p style="margin: 4px 0;"><strong>Event:</strong> ${evt.summary}</p>
+                    <p style="margin: 4px 0;"><strong>Start Time:</strong> ${new Date(startRaw).toLocaleString([], { weekday: 'short', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</p>
+                  </div>
+                  <p style="font-size: 11px; color: #64748b;">This reminder is for a personal calendar entry not managed as a specific TaskOwl deliverable.</p>
+                </div>`
+              );
+
+              remindedIds[evt.id] = true;
+              changedReminders = true;
+
+              addLog(
+                'Personal Calendar Reminder',
+                `Sent 24h advance alert for external event "${evt.summary}" to ${recipient}.`,
+                'info',
+                evt.summary
+              );
+
+              addNotification(
+                'Personal Event Reminder',
+                `"${evt.summary}" is starting in less than 24 hours.`,
+                'email_sent'
+              );
+            } catch (e) {
+              console.error('Failed to dispatch external calendar email:', e);
+            }
+          }
+        }
+
+        if (changedReminders) {
+          setExternalEventsReminded(remindedIds);
+        }
+      }
+    }
+  }, [tasks, preferences, user, addLog, addNotification, calendarEvents, externalEventsReminded]);
 
   // Run heartbeat on interval (30 seconds)
   useEffect(() => {
@@ -908,6 +991,7 @@ export default function App() {
             isGoogleConnected={!!user}
             onUpdateTaskLane={handleUpdateTaskLane}
             onUpdateTaskPriority={handleUpdateTaskPriority}
+            onUpdateTaskDeadline={handleUpdateTaskDeadline}
             onSyncTaskToCalendar={handleSyncTaskToCalendar}
             onEditTask={(task) => {
               setEditingTask(task);

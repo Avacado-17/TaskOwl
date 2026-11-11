@@ -13,6 +13,7 @@ export const INITIAL_PREFERENCES: AutomationPreferences = {
   emailUpdatesEnabled: true,
   recipientEmail: '',
   audioChimesEnabled: true,
+  remindCalendarExternalEvents: true,
 };
 
 export const INITIAL_TASKS: Task[] = [];

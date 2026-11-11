@@ -69,6 +69,7 @@ export interface AutomationPreferences {
   emailUpdatesEnabled: boolean;
   recipientEmail: string;
   audioChimesEnabled: boolean;
+  remindCalendarExternalEvents?: boolean; // Send email/in-app reminders for user's personal Google Calendar events not in task list
 }
 
 export interface AutomationLog {

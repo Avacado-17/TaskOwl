@@ -259,6 +259,30 @@ export const AutomationsHub: React.FC<AutomationsHubProps> = ({
                 </div>
               )}
             </div>
+            {/* Personal Calendar Reminders */}
+            <div className="py-3.5 space-y-2">
+              <div className="flex items-center justify-between gap-4">
+                <div>
+                  <span className="text-xs font-semibold text-[var(--text-primary)] block">
+                    Personal Calendar Event Reminders
+                  </span>
+                  <span className="text-[11px] text-[var(--text-secondary)]">
+                    Send Gmail and in-app alerts for any primary calendar event, even if not in the TaskOwl list.
+                  </span>
+                </div>
+                <label className="relative inline-flex items-center cursor-pointer shrink-0">
+                  <input
+                    type="checkbox"
+                    checked={preferences.remindCalendarExternalEvents}
+                    onChange={(e) =>
+                      onUpdatePreferences({ remindCalendarExternalEvents: e.target.checked })
+                    }
+                    className="sr-only peer"
+                  />
+                  <div className="w-9 h-5 bg-[var(--bg-surface-lowest)] peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-[var(--accent-primary)]"></div>
+                </label>
+              </div>
+            </div>
           </div>
         </div>
       </div>
