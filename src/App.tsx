@@ -244,17 +244,23 @@ export default function App() {
     testConnection();
   }, []);
 
+  const handleUpdatePreferences = useCallback(async (newPrefs: Partial<AutomationPreferences>) => {
+    if (!user) return;
+    const next = { ...preferences, ...newPrefs };
+    const prefsDoc = doc(db, `users/${user.uid}/preferences`, 'automation');
+    try {
+      await setDoc(prefsDoc, next);
+    } catch (e) {
+      handleFirestoreError(e, OperationType.UPDATE, prefsDoc.path);
+    }
+  }, [user, preferences]);
+
   // Synchronize recipient email whenever signed-in Google user email updates
   useEffect(() => {
-    if (user?.email) {
-      setPreferences((prev) => {
-        if (!prev.recipientEmail || prev.recipientEmail !== user.email) {
-          return { ...prev, recipientEmail: user.email! };
-        }
-        return prev;
-      });
+    if (user?.email && preferences.recipientEmail !== user.email) {
+      handleUpdatePreferences({ recipientEmail: user.email });
     }
-  }, [user?.email]);
+  }, [user?.email, preferences.recipientEmail, handleUpdatePreferences]);
 
   // Sign In with Google
   const handleSignIn = async () => {
@@ -262,12 +268,6 @@ export default function App() {
       const res = await googleSignIn();
       if (res) {
         setUser(res.user);
-        if (res.user.email) {
-          setPreferences((prev) => ({
-            ...prev,
-            recipientEmail: res.user.email || '',
-          }));
-        }
         showBanner(`Connected to Google Workspace as ${res.user.displayName || res.user.email}`);
         await loadCalendarEvents(res.accessToken);
       }
@@ -281,24 +281,15 @@ export default function App() {
   const handleSignOut = async () => {
     await googleLogout();
     setUser(null);
-    setPreferences((prev) => ({
-      ...prev,
-      recipientEmail: '',
-    }));
     setCalendarEvents([]);
     showBanner('Disconnected from Google Workspace', 'info');
   };
 
   // Toggle Theme (Dark vs White / Light)
   const handleToggleTheme = () => {
-    setCustomization((prev) => {
-      const nextMode: ThemeMode = prev.themeMode === 'dark' ? 'light' : 'dark';
-      showBanner(`Switched to ${nextMode === 'dark' ? 'Dark' : 'White'} theme`);
-      return {
-        ...prev,
-        themeMode: nextMode,
-      };
-    });
+    const nextMode: ThemeMode = customization.themeMode === 'dark' ? 'light' : 'dark';
+    handleUpdateCustomization({ themeMode: nextMode });
+    showBanner(`Switched to ${nextMode === 'dark' ? 'Dark' : 'White'} theme`);
   };
 
   const handleUpdateCustomization = async (updates: Partial<DashboardCustomization>) => {
@@ -511,8 +502,17 @@ export default function App() {
       }
     }
 
-    if (updatedTasks) {
-      setTasks(taskUpdates);
+    if (updatedTasks && user) {
+      for (const t of taskUpdates) {
+        // Only write if this specific task was updated (diff check or just write all modified ones)
+        // To be safe and simple, we'll write all but ideally only the changed ones.
+        // Actually, let's find which ones changed by comparing with the original 'tasks'
+        const original = tasks.find(ot => ot.id === t.id);
+        if (original && JSON.stringify(original) !== JSON.stringify(t)) {
+          const taskDoc = doc(db, `users/${user.uid}/tasks`, t.id);
+          await setDoc(taskDoc, t).catch(e => handleFirestoreError(e, OperationType.UPDATE, taskDoc.path));
+        }
+      }
     }
 
     // Check for external calendar events that aren't task-synced
@@ -601,18 +601,15 @@ export default function App() {
 
     try {
       const result = await createCalendarEvent(token, task, preferences.calendarReminderMinutes);
-      setTasks((prev) =>
-        prev.map((t) =>
-          t.id === task.id
-            ? {
-                ...t,
-                syncedToCalendar: true,
-                calendarEventId: result.id,
-                calendarEventUrl: result.htmlLink,
-              }
-            : t
-        )
-      );
+      const updatedTask = {
+        ...task,
+        syncedToCalendar: true,
+        calendarEventId: result.id,
+        calendarEventUrl: result.htmlLink,
+      };
+      
+      const taskDoc = doc(db, `users/${user.uid}/tasks`, task.id);
+      await setDoc(taskDoc, updatedTask).catch(e => handleFirestoreError(e, OperationType.UPDATE, taskDoc.path));
 
       if (preferences.audioChimesEnabled) {
         sounds.playCalendarSyncChime();
@@ -661,22 +658,19 @@ export default function App() {
     for (const item of unsynced) {
       try {
         const res = await createCalendarEvent(token, item, preferences.calendarReminderMinutes);
-        const idx = updated.findIndex((t) => t.id === item.id);
-        if (idx !== -1) {
-          updated[idx] = {
-            ...updated[idx],
-            syncedToCalendar: true,
-            calendarEventId: res.id,
-            calendarEventUrl: res.htmlLink,
-          };
-          successCount++;
-        }
+        const updatedTask = {
+          ...item,
+          syncedToCalendar: true,
+          calendarEventId: res.id,
+          calendarEventUrl: res.htmlLink,
+        };
+        const taskDoc = doc(db, `users/${user.uid}/tasks`, item.id);
+        await setDoc(taskDoc, updatedTask);
+        successCount++;
       } catch (e) {
         console.error('Batch sync error for task:', item.title, e);
       }
     }
-
-    setTasks(updated);
     if (preferences.audioChimesEnabled) {
       sounds.playSuccessChime();
     }
@@ -1095,17 +1089,7 @@ export default function App() {
         {activeTab === 'automations' && (
           <AutomationsHub
             preferences={preferences}
-            onUpdatePreferences={async (newPrefs) => {
-              if (!user) return;
-              const next = { ...preferences, ...newPrefs };
-              const prefsDoc = doc(db, `users/${user.uid}/preferences`, 'automation');
-              try {
-                await setDoc(prefsDoc, next);
-                showBanner('Automation preferences updated.');
-              } catch (e) {
-                handleFirestoreError(e, OperationType.UPDATE, prefsDoc.path);
-              }
-            }}
+            onUpdatePreferences={handleUpdatePreferences}
             logs={logs}
             onClearLogs={async () => {
               if (!user) return;
