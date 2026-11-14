@@ -2,42 +2,349 @@ rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
-    
-    // 0. Default Deny
+
+    // 0. Global Catch-All Default Deny
     match /{document=**} {
       allow read, write: if false;
     }
 
-    // --- Helpers ---
+    // --- Core Identity & Primitive Helpers ---
     function isSignedIn() {
       return request.auth != null;
     }
 
-    function isOwner(userId) {
-      return isSignedIn() && request.auth.uid == userId;
+    function isVerified() {
+      return isSignedIn() && request.auth.token.email_verified == true;
     }
 
-    // --- Match Groups ---
+    function isOwner(userId) {
+      return isVerified() && request.auth.uid == userId;
+    }
 
-    match /users/{userId} {
-      // Direct access to preferences
-      match /preferences/{prefId} {
-        allow read, write: if isOwner(userId);
+    function userEmail() {
+      return request.auth.token.email is string ? request.auth.token.email.lower() : '';
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function workspaceDoc(workspaceId) {
+      return get(/databases/$(database)/documents/workspaces/$(workspaceId)).data;
+    }
+
+    function workspaceExists(workspaceId) {
+      return exists(/databases/$(database)/documents/workspaces/$(workspaceId));
+    }
+
+    function isWorkspaceOwner(workspaceId) {
+      return isVerified()
+        && workspaceExists(workspaceId)
+        && workspaceDoc(workspaceId).ownerId == request.auth.uid;
+    }
+
+    function isWorkspaceMember(workspaceId) {
+      return isVerified()
+        && workspaceExists(workspaceId)
+        && (
+          workspaceDoc(workspaceId).ownerId == request.auth.uid ||
+          (userEmail().size() > 0 && userEmail() in workspaceDoc(workspaceId).memberEmails)
+        );
+    }
+
+    // --- Entity Validation Helpers ---
+
+    function isValidWorkspace(data) {
+      return data.keys().hasAll(['id', 'name', 'ownerId', 'ownerEmail', 'memberEmails', 'createdAt'])
+        && data.keys().hasOnly(['id', 'name', 'ownerId', 'ownerEmail', 'memberEmails', 'createdAt', 'updatedAt'])
+        && data.id is string && data.id.size() >= 1 && data.id.size() <= 128
+        && data.name is string && data.name.size() >= 1 && data.name.size() <= 120
+        && data.ownerId is string && data.ownerId.size() >= 1 && data.ownerId.size() <= 128
+        && data.ownerEmail is string && data.ownerEmail.size() >= 3 && data.ownerEmail.size() <= 254
+        && data.memberEmails is list && data.memberEmails.size() >= 1 && data.memberEmails.size() <= 50
+        && data.memberEmails[0] is string && data.memberEmails[0].size() >= 3 && data.memberEmails[0].size() <= 254
+        && data.ownerEmail in data.memberEmails
+        && data.createdAt is string && data.createdAt.size() >= 1 && data.createdAt.size() <= 64
+        && (!('updatedAt' in data) || (data.updatedAt is string && data.updatedAt.size() <= 64));
+    }
+
+    function isValidWorkspaceMember(data) {
+      return data.keys().hasAll(['id', 'email', 'name', 'role', 'workspaceRole', 'initials', 'addedBy', 'addedAt'])
+        && data.keys().hasOnly(['id', 'email', 'name', 'role', 'workspaceRole', 'initials', 'avatar', 'uid', 'addedBy', 'addedAt'])
+        && data.id is string && data.id.size() >= 1 && data.id.size() <= 128
+        && data.email is string && data.email.size() >= 3 && data.email.size() <= 254
+        && data.name is string && data.name.size() >= 1 && data.name.size() <= 120
+        && data.role is string && data.role.size() >= 1 && data.role.size() <= 80
+        && data.workspaceRole in ['owner', 'member']
+        && data.initials is string && data.initials.size() >= 1 && data.initials.size() <= 4
+        && (!('avatar' in data) || (data.avatar is string && data.avatar.size() <= 500))
+        && (!('uid' in data) || (data.uid is string && data.uid.size() >= 1 && data.uid.size() <= 128))
+        && data.addedBy is string && data.addedBy.size() >= 1 && data.addedBy.size() <= 128
+        && data.addedAt is string && data.addedAt.size() >= 1 && data.addedAt.size() <= 64;
+    }
+
+    function isValidAssignee(assignee) {
+      return assignee is map
+        && assignee.keys().hasAll(['name', 'role', 'initials'])
+        && assignee.keys().hasOnly(['name', 'email', 'role', 'initials', 'avatar'])
+        && assignee.name is string && assignee.name.size() >= 1 && assignee.name.size() <= 120
+        && assignee.role is string && assignee.role.size() >= 1 && assignee.role.size() <= 80
+        && assignee.initials is string && assignee.initials.size() >= 1 && assignee.initials.size() <= 4
+        && (!('email' in assignee) || (assignee.email is string && assignee.email.size() <= 254))
+        && (!('avatar' in assignee) || (assignee.avatar is string && assignee.avatar.size() <= 500));
+    }
+
+    function isValidTask(data) {
+      return data.keys().hasAll(['id', 'title', 'lane', 'priority', 'deadline', 'estimatedHours', 'assignee', 'tags', 'syncedToCalendar', 'escalated', 'createdAt'])
+        && data.keys().hasOnly(['id', 'title', 'description', 'lane', 'priority', 'originalPriority', 'deadline', 'estimatedHours', 'assignee', 'tags', 'syncedToCalendar', 'calendarEventId', 'calendarEventUrl', 'escalated', 'email48hSent', 'email24hSent', 'createdAt', 'completedAt', 'createdBy'])
+        && data.id is string && data.id.size() >= 1 && data.id.size() <= 128
+        && data.title is string && data.title.size() >= 1 && data.title.size() <= 500
+        && (!('description' in data) || (data.description is string && data.description.size() <= 5000))
+        && data.lane in ['backlog', 'in_progress', 'review', 'done']
+        && data.priority in ['low', 'medium', 'high', 'urgent']
+        && (!('originalPriority' in data) || data.originalPriority in ['low', 'medium', 'high', 'urgent'])
+        && data.deadline is string && data.deadline.size() >= 1 && data.deadline.size() <= 64
+        && data.estimatedHours is number && data.estimatedHours >= 0 && data.estimatedHours <= 10000
+        && isValidAssignee(data.assignee)
+        && data.tags is list && data.tags.size() <= 50
+        && (data.tags.size() == 0 || (data.tags[0] is string && data.tags[0].size() <= 64))
+        && data.syncedToCalendar is bool
+        && (!('calendarEventId' in data) || (data.calendarEventId is string && data.calendarEventId.size() <= 256))
+        && (!('calendarEventUrl' in data) || (data.calendarEventUrl is string && data.calendarEventUrl.size() <= 1000))
+        && data.escalated is bool
+        && (!('email48hSent' in data) || data.email48hSent is bool)
+        && (!('email24hSent' in data) || data.email24hSent is bool)
+        && data.createdAt is string && data.createdAt.size() >= 1 && data.createdAt.size() <= 64
+        && (!('completedAt' in data) || (data.completedAt is string && data.completedAt.size() <= 64))
+        && (!('createdBy' in data) || (data.createdBy is string && data.createdBy.size() <= 128));
+    }
+
+    function isValidAutomationPreferences(data) {
+      return data.keys().hasAll(['notify24Hours', 'notify1Hour', 'autoEscalateOverdue', 'autoEscalateHoursThreshold', 'morningDigest', 'morningDigestTime', 'calendarReminderMinutes', 'emailUpdatesEnabled', 'recipientEmail', 'audioChimesEnabled'])
+        && data.keys().hasOnly(['notify24Hours', 'notify1Hour', 'autoEscalateOverdue', 'autoEscalateHoursThreshold', 'morningDigest', 'morningDigestTime', 'calendarReminderMinutes', 'emailUpdatesEnabled', 'recipientEmail', 'customReminderMessage', 'audioChimesEnabled', 'remindCalendarExternalEvents'])
+        && data.notify24Hours is bool
+        && data.notify1Hour is bool
+        && data.autoEscalateOverdue is bool
+        && data.autoEscalateHoursThreshold is number && data.autoEscalateHoursThreshold >= 0 && data.autoEscalateHoursThreshold <= 720
+        && data.morningDigest is bool
+        && data.morningDigestTime is string && data.morningDigestTime.size() <= 16
+        && data.calendarReminderMinutes is number && data.calendarReminderMinutes >= 0 && data.calendarReminderMinutes <= 10080
+        && data.emailUpdatesEnabled is bool
+        && data.recipientEmail is string && data.recipientEmail.size() <= 254
+        && data.audioChimesEnabled is bool
+        && (!('remindCalendarExternalEvents' in data) || data.remindCalendarExternalEvents is bool)
+        && (!('customReminderMessage' in data) || (data.customReminderMessage is string && data.customReminderMessage.size() <= 2000));
+    }
+
+    function isValidDashboardCustomization(data) {
+      return data.keys().hasAll(['themeMode', 'accentColor', 'density', 'visibleWidgets'])
+        && data.keys().hasOnly(['themeMode', 'accentColor', 'accentLabel', 'density', 'visibleWidgets', 'widgetOrder', 'kpiOrder', 'kanbanLaneOrder', 'tableColumnOrder'])
+        && data.themeMode in ['dark', 'light']
+        && data.accentColor is string && data.accentColor.size() >= 1 && data.accentColor.size() <= 20
+        && (!('accentLabel' in data) || (data.accentLabel is string && data.accentLabel.size() <= 80))
+        && data.density in ['comfortable', 'compact']
+        && data.visibleWidgets is map
+        && (!('widgetOrder' in data) || (data.widgetOrder is list && data.widgetOrder.size() <= 20))
+        && (!('kpiOrder' in data) || (data.kpiOrder is list && data.kpiOrder.size() <= 20))
+        && (!('kanbanLaneOrder' in data) || (data.kanbanLaneOrder is list && data.kanbanLaneOrder.size() <= 20))
+        && (!('tableColumnOrder' in data) || (data.tableColumnOrder is list && data.tableColumnOrder.size() <= 20));
+    }
+
+    function isValidLog(data) {
+      return data.keys().hasAll(['id', 'ruleName', 'triggeredAt', 'status', 'details'])
+        && data.keys().hasOnly(['id', 'ruleName', 'taskId', 'taskTitle', 'triggeredAt', 'status', 'details'])
+        && data.id is string && data.id.size() >= 1 && data.id.size() <= 128
+        && data.ruleName is string && data.ruleName.size() >= 1 && data.ruleName.size() <= 200
+        && data.triggeredAt is string && data.triggeredAt.size() >= 1 && data.triggeredAt.size() <= 64
+        && data.status in ['success', 'warning', 'info']
+        && data.details is string && data.details.size() <= 2000
+        && (!('taskId' in data) || (data.taskId is string && data.taskId.size() <= 128))
+        && (!('taskTitle' in data) || (data.taskTitle is string && data.taskTitle.size() <= 500));
+    }
+
+    function isValidNotification(data) {
+      return data.keys().hasAll(['id', 'type', 'title', 'message', 'timestamp', 'read'])
+        && data.keys().hasOnly(['id', 'type', 'title', 'message', 'taskId', 'timestamp', 'read', 'actionUrl'])
+        && data.id is string && data.id.size() >= 1 && data.id.size() <= 128
+        && data.type is string && data.type.size() >= 1 && data.type.size() <= 64
+        && data.title is string && data.title.size() >= 1 && data.title.size() <= 200
+        && data.message is string && data.message.size() >= 1 && data.message.size() <= 1000
+        && data.timestamp is string && data.timestamp.size() >= 1 && data.timestamp.size() <= 64
+        && data.read is bool
+        && (!('taskId' in data) || (data.taskId is string && data.taskId.size() <= 128))
+        && (!('actionUrl' in data) || (data.actionUrl is string && data.actionUrl.size() <= 500));
+    }
+
+    // --- Shared Workspaces ---
+    match /workspaces/{workspaceId} {
+      allow get: if isVerified() && (
+        existing().ownerId == request.auth.uid ||
+        (userEmail().size() > 0 && userEmail() in existing().memberEmails)
+      );
+
+      allow list: if isVerified() && (
+        existing().ownerId == request.auth.uid ||
+        (userEmail().size() > 0 && userEmail() in existing().memberEmails)
+      );
+
+      allow create: if isVerified()
+        && isValidId(workspaceId)
+        && isValidWorkspace(incoming())
+        && incoming().id == workspaceId
+        && incoming().ownerId == request.auth.uid
+        && incoming().ownerEmail == userEmail()
+        && userEmail() in incoming().memberEmails;
+
+      allow update: if isVerified()
+        && isValidId(workspaceId)
+        && isValidWorkspace(incoming())
+        && existing().ownerId == request.auth.uid
+        && incoming().id == existing().id
+        && incoming().ownerId == existing().ownerId
+        && incoming().ownerEmail == existing().ownerEmail
+        && incoming().createdAt == existing().createdAt
+        && incoming().diff(existing()).affectedKeys().hasOnly(['name', 'memberEmails', 'updatedAt']);
+
+      allow delete: if isVerified()
+        && isValidId(workspaceId)
+        && existing().ownerId == request.auth.uid;
+
+      // Workspace Members Subcollection
+      match /members/{memberId} {
+        allow get: if isValidId(memberId) && isWorkspaceMember(workspaceId);
+        allow list: if isWorkspaceMember(workspaceId);
+
+        allow create: if isWorkspaceOwner(workspaceId)
+          && isValidId(memberId)
+          && isValidWorkspaceMember(incoming())
+          && incoming().id == memberId
+          && incoming().addedBy == request.auth.uid;
+
+        allow update: if isValidId(memberId)
+          && isValidWorkspaceMember(incoming())
+          && incoming().id == existing().id
+          && incoming().email == existing().email
+          && incoming().addedBy == existing().addedBy
+          && incoming().addedAt == existing().addedAt
+          && (
+            (isWorkspaceOwner(workspaceId) && incoming().diff(existing()).affectedKeys().hasOnly(['name', 'role', 'workspaceRole', 'initials', 'avatar', 'uid'])) ||
+            (isWorkspaceMember(workspaceId) && userEmail() == existing().email && incoming().workspaceRole == existing().workspaceRole && incoming().diff(existing()).affectedKeys().hasOnly(['name', 'initials', 'avatar', 'uid']))
+          );
+
+        allow delete: if isValidId(memberId)
+          && isWorkspaceOwner(workspaceId)
+          && existing().workspaceRole != 'owner';
       }
 
-      // Access to sub-collections
+      // Workspace Tasks Subcollection
       match /tasks/{taskId} {
-        allow read, write: if isOwner(userId);
+        allow get: if isValidId(taskId) && isWorkspaceMember(workspaceId);
+        allow list: if isWorkspaceMember(workspaceId);
+
+        allow create: if isWorkspaceMember(workspaceId)
+          && isValidId(taskId)
+          && isValidTask(incoming())
+          && incoming().id == taskId;
+
+        allow update: if isWorkspaceMember(workspaceId)
+          && isValidId(taskId)
+          && isValidTask(incoming())
+          && incoming().id == existing().id
+          && incoming().createdAt == existing().createdAt
+          && incoming().diff(existing()).affectedKeys().hasOnly([
+            'title', 'description', 'lane', 'priority', 'originalPriority',
+            'deadline', 'estimatedHours', 'assignee', 'tags',
+            'syncedToCalendar', 'calendarEventId', 'calendarEventUrl',
+            'escalated', 'email48hSent', 'email24hSent', 'completedAt'
+          ]);
+
+        allow delete: if isValidId(taskId) && isWorkspaceMember(workspaceId);
+      }
+
+      // Workspace Preferences
+      match /preferences/automation {
+        allow get: if isWorkspaceMember(workspaceId);
+        allow create, update: if isWorkspaceMember(workspaceId) && isValidAutomationPreferences(incoming());
+        allow delete: if isWorkspaceOwner(workspaceId);
+      }
+
+      match /preferences/customization {
+        allow get: if isWorkspaceMember(workspaceId);
+        allow create, update: if isWorkspaceMember(workspaceId) && isValidDashboardCustomization(incoming());
+        allow delete: if isWorkspaceOwner(workspaceId);
+      }
+
+      // Workspace Logs
+      match /logs/{logId} {
+        allow get: if isValidId(logId) && isWorkspaceMember(workspaceId);
+        allow list: if isWorkspaceMember(workspaceId);
+        allow create: if isWorkspaceMember(workspaceId)
+          && isValidId(logId)
+          && isValidLog(incoming())
+          && incoming().id == logId;
+        allow delete: if isValidId(logId) && isWorkspaceMember(workspaceId);
+      }
+
+      // Workspace Notifications
+      match /notifications/{notificationId} {
+        allow get: if isValidId(notificationId) && isWorkspaceMember(workspaceId);
+        allow list: if isWorkspaceMember(workspaceId);
+        allow create: if isWorkspaceMember(workspaceId)
+          && isValidId(notificationId)
+          && isValidNotification(incoming())
+          && incoming().id == notificationId;
+        allow update: if isWorkspaceMember(workspaceId)
+          && isValidId(notificationId)
+          && isValidNotification(incoming())
+          && incoming().id == existing().id
+          && incoming().timestamp == existing().timestamp
+          && incoming().diff(existing()).affectedKeys().hasOnly(['read']);
+        allow delete: if isValidId(notificationId) && isWorkspaceMember(workspaceId);
+      }
+    }
+
+    // --- Legacy Personal Collections (Preserved for 1-time migration) ---
+    match /users/{userId} {
+      match /tasks/{taskId} {
+        allow get: if isOwner(userId) && isValidId(taskId);
+        allow list: if isOwner(userId);
+        allow create: if isOwner(userId) && isValidId(taskId) && isValidTask(incoming());
+        allow update: if isOwner(userId) && isValidId(taskId) && isValidTask(incoming());
+        allow delete: if isOwner(userId) && isValidId(taskId);
+      }
+
+      match /preferences/automation {
+        allow get: if isOwner(userId);
+        allow create, update: if isOwner(userId) && isValidAutomationPreferences(incoming());
+      }
+
+      match /preferences/customization {
+        allow get: if isOwner(userId);
+        allow create, update: if isOwner(userId) && isValidDashboardCustomization(incoming());
       }
 
       match /logs/{logId} {
-        allow read, write: if isOwner(userId);
+        allow get: if isOwner(userId) && isValidId(logId);
+        allow list: if isOwner(userId);
+        allow create: if isOwner(userId) && isValidId(logId) && isValidLog(incoming());
+        allow delete: if isOwner(userId) && isValidId(logId);
       }
 
       match /notifications/{notificationId} {
-        allow read, write: if isOwner(userId);
+        allow get: if isOwner(userId) && isValidId(notificationId);
+        allow list: if isOwner(userId);
+        allow create: if isOwner(userId) && isValidId(notificationId) && isValidNotification(incoming());
+        allow update: if isOwner(userId) && isValidId(notificationId) && isValidNotification(incoming());
+        allow delete: if isOwner(userId) && isValidId(notificationId);
       }
     }
   }
 }
-

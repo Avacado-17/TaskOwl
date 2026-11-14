@@ -12,6 +12,7 @@ export const INITIAL_PREFERENCES: AutomationPreferences = {
   calendarReminderMinutes: 30,
   emailUpdatesEnabled: true,
   recipientEmail: '',
+  customReminderMessage: '',
   audioChimesEnabled: true,
   remindCalendarExternalEvents: true,
 };

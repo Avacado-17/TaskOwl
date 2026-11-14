@@ -10,6 +10,7 @@ import {
   Moon,
   Sliders,
   LogOut,
+  Users,
 } from 'lucide-react';
 import { ThemeMode } from '../types';
 
@@ -26,6 +27,9 @@ interface TopNavProps {
   unreadCount: number;
   onOpenNotifications: () => void;
   onOpenNewTaskModal: () => void;
+  activeWorkspaceName?: string;
+  memberCount?: number;
+  onOpenWorkspaceModal: () => void;
 }
 
 export const TopNav: React.FC<TopNavProps> = ({
@@ -41,6 +45,9 @@ export const TopNav: React.FC<TopNavProps> = ({
   unreadCount,
   onOpenNotifications,
   onOpenNewTaskModal,
+  activeWorkspaceName,
+  memberCount = 1,
+  onOpenWorkspaceModal,
 }) => {
 
   return (
@@ -155,6 +162,21 @@ export const TopNav: React.FC<TopNavProps> = ({
             <span className="hidden sm:inline font-mono text-[11px]">Palette</span>
           </button>
 
+
+          {/* Workspace & Team Members Button */}
+          <button
+            onClick={onOpenWorkspaceModal}
+            className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium rounded-md border border-[var(--border-subtle)] bg-[var(--bg-surface)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:border-[var(--border-strong)] transition-all whitespace-nowrap"
+            title="Manage workspace members & switch workspaces"
+          >
+            <Users className="w-3.5 h-3.5 text-[var(--accent-primary)]" />
+            <span className="hidden lg:inline max-w-[110px] truncate">
+              {activeWorkspaceName || 'Team'}
+            </span>
+            <span className="font-mono text-[10px] text-[var(--text-muted)]">
+              ({memberCount})
+            </span>
+          </button>
 
           {/* Notifications bell */}
           <button

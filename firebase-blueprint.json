@@ -1,41 +1,77 @@
 {
   "entities": {
-    "Task": {
-      "title": "Task",
-      "description": "A deliverable task managed by TaskOwl.",
+    "Workspace": {
+      "title": "Workspace",
+      "description": "A collaborative TaskOwl workspace shared across members via email.",
       "type": "object",
       "properties": {
-        "id": { "type": "string" },
-        "title": { "type": "string", "maxLength": 200 },
-        "description": { "type": "string", "maxLength": 2000 },
+        "id": { "type": "string", "maxLength": 128 },
+        "name": { "type": "string", "maxLength": 120 },
+        "ownerId": { "type": "string", "maxLength": 128 },
+        "ownerEmail": { "type": "string", "maxLength": 254 },
+        "memberEmails": { "type": "array", "items": { "type": "string" } },
+        "createdAt": { "type": "string", "format": "date-time", "maxLength": 64 },
+        "updatedAt": { "type": "string", "format": "date-time", "maxLength": 64 }
+      },
+      "required": ["id", "name", "ownerId", "ownerEmail", "memberEmails", "createdAt"]
+    },
+    "WorkspaceMember": {
+      "title": "Workspace Member",
+      "description": "A collaborator added to a workspace by email who can be assigned tasks.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "email": { "type": "string", "maxLength": 254 },
+        "name": { "type": "string", "maxLength": 120 },
+        "role": { "type": "string", "maxLength": 80 },
+        "workspaceRole": { "type": "string", "enum": ["owner", "member"] },
+        "initials": { "type": "string", "maxLength": 4 },
+        "avatar": { "type": "string", "maxLength": 500 },
+        "uid": { "type": "string", "maxLength": 128 },
+        "addedBy": { "type": "string", "maxLength": 128 },
+        "addedAt": { "type": "string", "format": "date-time", "maxLength": 64 }
+      },
+      "required": ["id", "email", "name", "role", "workspaceRole", "initials", "addedBy", "addedAt"]
+    },
+    "Task": {
+      "title": "Task",
+      "description": "A deliverable task managed by TaskOwl within a workspace.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "title": { "type": "string", "maxLength": 500 },
+        "description": { "type": "string", "maxLength": 5000 },
         "lane": { "type": "string", "enum": ["backlog", "in_progress", "review", "done"] },
         "priority": { "type": "string", "enum": ["low", "medium", "high", "urgent"] },
         "originalPriority": { "type": "string", "enum": ["low", "medium", "high", "urgent"] },
-        "deadline": { "type": "string", "format": "date-time" },
+        "deadline": { "type": "string", "format": "date-time", "maxLength": 64 },
         "estimatedHours": { "type": "number" },
         "assignee": {
           "type": "object",
           "properties": {
-            "name": { "type": "string" },
-            "role": { "type": "string" },
-            "initials": { "type": "string" }
+            "name": { "type": "string", "maxLength": 120 },
+            "email": { "type": "string", "maxLength": 254 },
+            "role": { "type": "string", "maxLength": 80 },
+            "initials": { "type": "string", "maxLength": 4 },
+            "avatar": { "type": "string", "maxLength": 500 }
           }
         },
         "tags": { "type": "array", "items": { "type": "string" } },
         "syncedToCalendar": { "type": "boolean" },
-        "calendarEventId": { "type": "string" },
-        "calendarEventUrl": { "type": "string" },
+        "calendarEventId": { "type": "string", "maxLength": 256 },
+        "calendarEventUrl": { "type": "string", "maxLength": 1000 },
         "escalated": { "type": "boolean" },
         "email48hSent": { "type": "boolean" },
         "email24hSent": { "type": "boolean" },
-        "createdAt": { "type": "string", "format": "date-time" },
-        "completedAt": { "type": "string", "format": "date-time" }
+        "createdAt": { "type": "string", "format": "date-time", "maxLength": 64 },
+        "completedAt": { "type": "string", "format": "date-time", "maxLength": 64 },
+        "createdBy": { "type": "string", "maxLength": 128 }
       },
-      "required": ["id", "title", "lane", "priority", "deadline", "assignee", "createdAt"]
+      "required": ["id", "title", "lane", "priority", "deadline", "estimatedHours", "assignee", "tags", "syncedToCalendar", "escalated", "createdAt"]
     },
     "AutomationPreferences": {
       "title": "Automation Preferences",
-      "description": "User preferences for task automations and reminders.",
+      "description": "Workspace preferences for task automations and reminders.",
       "type": "object",
       "properties": {
         "notify24Hours": { "type": "boolean" },
@@ -43,10 +79,11 @@
         "autoEscalateOverdue": { "type": "boolean" },
         "autoEscalateHoursThreshold": { "type": "number" },
         "morningDigest": { "type": "boolean" },
-        "morningDigestTime": { "type": "string" },
+        "morningDigestTime": { "type": "string", "maxLength": 16 },
         "calendarReminderMinutes": { "type": "number" },
         "emailUpdatesEnabled": { "type": "boolean" },
-        "recipientEmail": { "type": "string" },
+        "recipientEmail": { "type": "string", "maxLength": 254 },
+        "customReminderMessage": { "type": "string", "maxLength": 2000 },
         "audioChimesEnabled": { "type": "boolean" },
         "remindCalendarExternalEvents": { "type": "boolean" }
       }
@@ -57,12 +94,13 @@
       "type": "object",
       "properties": {
         "themeMode": { "type": "string", "enum": ["dark", "light"] },
-        "accentColor": { "type": "string" },
-        "accentLabel": { "type": "string" },
+        "accentColor": { "type": "string", "maxLength": 20 },
+        "accentLabel": { "type": "string", "maxLength": 80 },
         "density": { "type": "string", "enum": ["comfortable", "compact"] },
         "visibleWidgets": { "type": "object" },
         "widgetOrder": { "type": "array", "items": { "type": "string" } },
         "kpiOrder": { "type": "array", "items": { "type": "string" } },
+        "kanbanLaneOrder": { "type": "array", "items": { "type": "string" } },
         "tableColumnOrder": { "type": "array", "items": { "type": "string" } }
       }
     },
@@ -71,53 +109,81 @@
       "description": "A log entry for an executed automation rule.",
       "type": "object",
       "properties": {
-        "id": { "type": "string" },
-        "ruleName": { "type": "string" },
-        "taskId": { "type": "string" },
-        "taskTitle": { "type": "string" },
-        "triggeredAt": { "type": "string", "format": "date-time" },
+        "id": { "type": "string", "maxLength": 128 },
+        "ruleName": { "type": "string", "maxLength": 200 },
+        "taskId": { "type": "string", "maxLength": 128 },
+        "taskTitle": { "type": "string", "maxLength": 500 },
+        "triggeredAt": { "type": "string", "format": "date-time", "maxLength": 64 },
         "status": { "type": "string", "enum": ["success", "warning", "info"] },
-        "details": { "type": "string" }
+        "details": { "type": "string", "maxLength": 2000 }
       },
       "required": ["id", "ruleName", "triggeredAt", "status", "details"]
     },
     "InAppNotification": {
       "title": "Notification",
-      "description": "An in-app notification for the user.",
+      "description": "An in-app notification for workspace members.",
       "type": "object",
       "properties": {
-        "id": { "type": "string" },
-        "type": { "type": "string" },
-        "title": { "type": "string" },
-        "message": { "type": "string" },
-        "taskId": { "type": "string" },
-        "timestamp": { "type": "string", "format": "date-time" },
+        "id": { "type": "string", "maxLength": 128 },
+        "type": { "type": "string", "maxLength": 64 },
+        "title": { "type": "string", "maxLength": 200 },
+        "message": { "type": "string", "maxLength": 1000 },
+        "taskId": { "type": "string", "maxLength": 128 },
+        "timestamp": { "type": "string", "format": "date-time", "maxLength": 64 },
         "read": { "type": "boolean" },
-        "actionUrl": { "type": "string" }
+        "actionUrl": { "type": "string", "maxLength": 500 }
       },
       "required": ["id", "type", "title", "message", "timestamp", "read"]
     }
   },
   "firestore": {
+    "/workspaces/{workspaceId}": {
+      "schema": "Workspace",
+      "description": "Shared collaborative workspaces accessible to owner and invited member emails."
+    },
+    "/workspaces/{workspaceId}/members/{memberId}": {
+      "schema": "WorkspaceMember",
+      "description": "Members added to the workspace by email."
+    },
+    "/workspaces/{workspaceId}/tasks/{taskId}": {
+      "schema": "Task",
+      "description": "Tasks belonging to a shared workspace."
+    },
+    "/workspaces/{workspaceId}/preferences/automation": {
+      "schema": "AutomationPreferences",
+      "description": "Automation settings for a workspace."
+    },
+    "/workspaces/{workspaceId}/preferences/customization": {
+      "schema": "DashboardCustomization",
+      "description": "Dashboard layout and theme customization for a workspace."
+    },
+    "/workspaces/{workspaceId}/logs/{logId}": {
+      "schema": "AutomationLog",
+      "description": "Automation execution logs for a workspace."
+    },
+    "/workspaces/{workspaceId}/notifications/{notificationId}": {
+      "schema": "InAppNotification",
+      "description": "Notifications for a workspace."
+    },
     "/users/{userId}/tasks/{taskId}": {
       "schema": "Task",
-      "description": "Collection of user-specific tasks."
+      "description": "Legacy personal task collection preserved for seamless migration."
     },
     "/users/{userId}/preferences/automation": {
       "schema": "AutomationPreferences",
-      "description": "Automation settings for a specific user."
+      "description": "Legacy personal automation preferences."
     },
     "/users/{userId}/preferences/customization": {
       "schema": "DashboardCustomization",
-      "description": "UI customization settings for a specific user."
+      "description": "Legacy personal dashboard customization."
     },
     "/users/{userId}/logs/{logId}": {
       "schema": "AutomationLog",
-      "description": "Log of automation actions for the user."
+      "description": "Legacy personal automation logs."
     },
     "/users/{userId}/notifications/{notificationId}": {
       "schema": "InAppNotification",
-      "description": "Notifications for the user."
+      "description": "Legacy personal notifications."
     }
   }
 }

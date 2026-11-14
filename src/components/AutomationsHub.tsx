@@ -20,12 +20,12 @@ import { sounds } from '../services/soundEffects';
 
 interface AutomationsHubProps {
   preferences: AutomationPreferences;
-  onUpdatePreferences: (newPrefs: Partial<AutomationPreferences>) => void;
+  onUpdatePreferences: (newPrefs: Partial<AutomationPreferences>) => void | Promise<void>;
   logs: AutomationLog[];
   onClearLogs: () => void;
   onTriggerHeartbeatNow: () => void;
   onSimulateAlarm: (type: '1h' | '24h' | 'escalation') => void;
-  onSendTestEmail: () => Promise<void>;
+  onSendTestEmail: (overrideRecipient?: string, overrideMessage?: string) => Promise<void>;
   isGoogleConnected: boolean;
   userEmail?: string | null;
   tasks: Task[];
@@ -44,7 +44,26 @@ export const AutomationsHub: React.FC<AutomationsHubProps> = ({
   tasks,
 }) => {
   const [isSendingEmail, setIsSendingEmail] = useState(false);
-  const [emailNotice, setEmailNotice] = useState<string | null>(null);
+  const [emailNotice, setEmailNotice] = useState<{ text: string; isError?: boolean } | null>(null);
+  const [recipientDraft, setRecipientDraft] = useState(preferences.recipientEmail || userEmail || '');
+  const [customMessageDraft, setCustomMessageDraft] = useState(preferences.customReminderMessage || '');
+  const [isSavingMessage, setIsSavingMessage] = useState(false);
+  const [messageSavedAt, setMessageSavedAt] = useState<string | null>(null);
+  const recipientInputRef = React.useRef<HTMLInputElement | null>(null);
+  const messageTextareaRef = React.useRef<HTMLTextAreaElement | null>(null);
+
+  // Sync external preference updates when fields are not focused
+  React.useEffect(() => {
+    if (document.activeElement !== recipientInputRef.current) {
+      setRecipientDraft(preferences.recipientEmail || userEmail || '');
+    }
+  }, [preferences.recipientEmail, userEmail]);
+
+  React.useEffect(() => {
+    if (document.activeElement !== messageTextareaRef.current) {
+      setCustomMessageDraft(preferences.customReminderMessage || '');
+    }
+  }, [preferences.customReminderMessage]);
 
   // Automatically sync recipient email from signed-in Google account
   React.useEffect(() => {
@@ -53,15 +72,71 @@ export const AutomationsHub: React.FC<AutomationsHubProps> = ({
     }
   }, [userEmail, preferences.recipientEmail, onUpdatePreferences]);
 
+  const savedMessage = preferences.customReminderMessage || '';
+  const hasUnsavedMessage = customMessageDraft !== savedMessage;
+
+  const handleSaveCustomMessage = async (nextValue?: string) => {
+    const val = (nextValue !== undefined ? nextValue : customMessageDraft).slice(0, 2000);
+    if (val === savedMessage) return;
+    setIsSavingMessage(true);
+    try {
+      await onUpdatePreferences({ customReminderMessage: val });
+      setMessageSavedAt(new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }));
+    } finally {
+      setIsSavingMessage(false);
+    }
+  };
+
+  // Auto-save custom reminder message after a short pause in typing
+  React.useEffect(() => {
+    if (!hasUnsavedMessage) return;
+    const timer = setTimeout(() => {
+      handleSaveCustomMessage(customMessageDraft);
+    }, 700);
+    return () => clearTimeout(timer);
+  }, [customMessageDraft, hasUnsavedMessage]);
+
+  const insertToken = (token: string) => {
+    const el = messageTextareaRef.current;
+    if (!el) {
+      const appended = `${customMessageDraft}${customMessageDraft && !customMessageDraft.endsWith(' ') ? ' ' : ''}${token}`.slice(0, 2000);
+      setCustomMessageDraft(appended);
+      return;
+    }
+    const start = el.selectionStart ?? customMessageDraft.length;
+    const end = el.selectionEnd ?? customMessageDraft.length;
+    const next = (customMessageDraft.slice(0, start) + token + customMessageDraft.slice(end)).slice(0, 2000);
+    setCustomMessageDraft(next);
+    requestAnimationFrame(() => {
+      el.focus();
+      const pos = Math.min(start + token.length, next.length);
+      el.setSelectionRange(pos, pos);
+    });
+  };
+
   const handleTestEmail = async () => {
     setIsSendingEmail(true);
     setEmailNotice(null);
     try {
-      await onSendTestEmail();
-      setEmailNotice('Test notification successfully dispatched via Gmail API.');
+      const targetEmail = recipientDraft.trim();
+      const targetMessage = customMessageDraft.slice(0, 2000);
+      if (targetEmail !== (preferences.recipientEmail || '') || targetMessage !== savedMessage) {
+        await onUpdatePreferences({
+          recipientEmail: targetEmail,
+          customReminderMessage: targetMessage,
+        });
+      }
+      await onSendTestEmail(targetEmail, targetMessage);
+      setEmailNotice({
+        text: `Test reminder email dispatched via Gmail API to ${targetEmail || userEmail}.`,
+        isError: false,
+      });
       setTimeout(() => setEmailNotice(null), 5000);
     } catch (err: any) {
-      setEmailNotice(err?.message || 'Failed to dispatch test email');
+      setEmailNotice({
+        text: err?.message || 'Failed to dispatch test email',
+        isError: true,
+      });
     } finally {
       setIsSendingEmail(false);
     }
@@ -211,30 +286,136 @@ export const AutomationsHub: React.FC<AutomationsHubProps> = ({
               </div>
 
               {preferences.emailUpdatesEnabled && (
-                <div className="space-y-2 pt-1">
-                  <div className="flex items-center justify-between">
-                    <label className="block text-[11px] text-[var(--text-secondary)]">
-                      Recipient Inbox Address:
-                    </label>
-                    {userEmail && preferences.recipientEmail !== userEmail && (
-                      <button
-                        type="button"
-                        onClick={() => onUpdatePreferences({ recipientEmail: userEmail })}
-                        className="text-[10px] text-[var(--accent-primary)] hover:underline font-mono"
-                      >
-                        Reset to Google Account ({userEmail})
-                      </button>
-                    )}
+                <div className="space-y-4 pt-2">
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <label className="block text-[11px] font-medium text-[var(--text-secondary)]">
+                        Recipient Inbox Address:
+                      </label>
+                      {userEmail && recipientDraft !== userEmail && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setRecipientDraft(userEmail);
+                            onUpdatePreferences({ recipientEmail: userEmail });
+                          }}
+                          className="text-[10px] text-[var(--accent-primary)] hover:underline font-mono"
+                        >
+                          Reset to Google Account ({userEmail})
+                        </button>
+                      )}
+                    </div>
+                    <input
+                      ref={recipientInputRef}
+                      type="email"
+                      value={recipientDraft}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        setRecipientDraft(val);
+                      }}
+                      onBlur={() => {
+                        const trimmed = recipientDraft.trim();
+                        if (trimmed !== (preferences.recipientEmail || '')) {
+                          onUpdatePreferences({ recipientEmail: trimmed });
+                        }
+                      }}
+                      placeholder={userEmail ? userEmail : "Sign in with Google to auto-route alerts"}
+                      className="w-full px-3 py-1.5 text-xs font-mono rounded-md bg-[var(--bg-surface-lowest)] border border-[var(--border-subtle)] text-[var(--text-primary)] focus:outline-none focus:border-[var(--accent-primary)] transition-colors"
+                    />
                   </div>
-                  <input
-                    type="email"
-                    value={preferences.recipientEmail || (userEmail || '')}
-                    onChange={(e) =>
-                      onUpdatePreferences({ recipientEmail: e.target.value })
-                    }
-                    placeholder={userEmail ? userEmail : "Sign in with Google to auto-route alerts"}
-                    className="w-full px-3 py-1.5 text-xs font-mono rounded-md bg-[var(--bg-surface-lowest)] border border-[var(--border-subtle)] text-[var(--text-primary)] focus:outline-none focus:border-[var(--accent-primary)] transition-colors"
-                  />
+
+                  {/* Custom Reminder Email Message Box */}
+                  <div className="space-y-2 pt-2 border-t border-[var(--border-subtle)]/60">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div>
+                        <label
+                          htmlFor="custom-reminder-message"
+                          className="block text-[11px] font-semibold text-[var(--text-primary)]"
+                        >
+                          Custom Reminder Email Message
+                        </label>
+                        <span className="text-[11px] text-[var(--text-secondary)]">
+                          This custom message is included in automated reminder emails sent to the recipient address above.
+                        </span>
+                      </div>
+                      <span className="text-[10px] font-mono text-[var(--text-muted)]">
+                        {isSavingMessage
+                          ? 'Saving...'
+                          : hasUnsavedMessage
+                          ? 'Unsaved edits'
+                          : messageSavedAt
+                          ? `Saved at ${messageSavedAt}`
+                          : `${customMessageDraft.length}/2000 chars`}
+                      </span>
+                    </div>
+
+                    <textarea
+                      id="custom-reminder-message"
+                      ref={messageTextareaRef}
+                      rows={4}
+                      maxLength={2000}
+                      value={customMessageDraft}
+                      onChange={(e) => setCustomMessageDraft(e.target.value)}
+                      onBlur={() => handleSaveCustomMessage()}
+                      placeholder="Write your custom reminder message here (e.g., Hey! Friendly reminder that {task} is due on {deadline}. Please review before the cutoff!)."
+                      className="w-full px-3 py-2 text-xs rounded-md bg-[var(--bg-surface-lowest)] border border-[var(--border-subtle)] text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:outline-none focus:border-[var(--accent-primary)] transition-colors resize-y leading-relaxed"
+                    />
+
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        <span className="text-[10px] font-mono text-[var(--text-muted)] mr-1">
+                          Insert placeholder:
+                        </span>
+                        {[
+                          { token: '{task}', label: '{task}' },
+                          { token: '{deadline}', label: '{deadline}' },
+                          { token: '{priority}', label: '{priority}' },
+                          { token: '{owner}', label: '{owner}' },
+                        ].map((item) => (
+                          <button
+                            key={item.token}
+                            type="button"
+                            onClick={() => insertToken(item.token)}
+                            className="px-2 py-0.5 text-[10px] font-mono rounded bg-[var(--bg-surface-lowest)] border border-[var(--border-subtle)] text-[var(--text-secondary)] hover:text-[var(--accent-primary)] hover:border-[var(--accent-primary)]/50 transition-colors"
+                          >
+                            {item.label}
+                          </button>
+                        ))}
+                      </div>
+
+                      <div className="flex items-center gap-2">
+                        {customMessageDraft.trim().length > 0 && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setCustomMessageDraft('');
+                              handleSaveCustomMessage('');
+                            }}
+                            className="px-2.5 py-1.5 text-[11px] font-medium rounded-md border border-[var(--border-subtle)] text-[var(--text-secondary)] hover:text-red-400 hover:border-red-500/40 transition-colors"
+                          >
+                            Clear
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          disabled={!hasUnsavedMessage || isSavingMessage}
+                          onClick={() => handleSaveCustomMessage()}
+                          className="px-3 py-1.5 text-[11px] font-semibold rounded-md border border-[var(--border-subtle)] bg-[var(--bg-surface-high)] text-[var(--text-primary)] hover:border-[var(--accent-primary)] disabled:opacity-40 transition-colors"
+                        >
+                          {isSavingMessage ? 'Saving...' : 'Save Message'}
+                        </button>
+                        <button
+                          type="button"
+                          disabled={isSendingEmail}
+                          onClick={handleTestEmail}
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 text-[11px] font-semibold rounded-md bg-[var(--accent-primary)] text-slate-950 hover:opacity-90 disabled:opacity-50 transition-opacity"
+                        >
+                          <Send className="w-3 h-3" />
+                          {isSendingEmail ? 'Sending...' : 'Send Test Reminder Email'}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
 
                   <div className="pt-1 flex items-center justify-between">
                     <span className="text-[10px] font-mono">
@@ -252,8 +433,14 @@ export const AutomationsHub: React.FC<AutomationsHubProps> = ({
                   </div>
 
                   {emailNotice && (
-                    <div className="p-2 rounded-lg bg-[var(--bg-surface-lowest)] border border-[var(--border-subtle)] text-[11px] font-mono text-[var(--accent-primary)]">
-                      {emailNotice}
+                    <div
+                      className={`p-2.5 rounded-lg border text-[11px] font-mono ${
+                        emailNotice.isError
+                          ? 'bg-red-500/10 border-red-500/30 text-red-400'
+                          : 'bg-[var(--bg-surface-lowest)] border-[var(--border-subtle)] text-[var(--accent-primary)]'
+                      }`}
+                    >
+                      {emailNotice.text}
                     </div>
                   )}
                 </div>

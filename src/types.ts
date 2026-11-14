@@ -32,9 +32,33 @@ export interface DashboardCustomization {
 
 export interface Assignee {
   name: string;
+  email?: string;
   role: string;
   avatar?: string;
   initials: string;
+}
+
+export interface Workspace {
+  id: string;
+  name: string;
+  ownerId: string;
+  ownerEmail: string;
+  memberEmails: string[];
+  createdAt: string;
+  updatedAt?: string;
+}
+
+export interface WorkspaceMember {
+  id: string;
+  email: string;
+  name: string;
+  role: string;
+  workspaceRole: 'owner' | 'member';
+  initials: string;
+  avatar?: string;
+  uid?: string;
+  addedBy: string;
+  addedAt: string;
 }
 
 export interface Task {
@@ -56,6 +80,7 @@ export interface Task {
   email24hSent?: boolean;
   createdAt: string;
   completedAt?: string;
+  createdBy?: string;
 }
 
 export interface AutomationPreferences {
@@ -68,6 +93,7 @@ export interface AutomationPreferences {
   calendarReminderMinutes: number; // 10, 30, 60
   emailUpdatesEnabled: boolean;
   recipientEmail: string;
+  customReminderMessage?: string;
   audioChimesEnabled: boolean;
   remindCalendarExternalEvents?: boolean; // Send email/in-app reminders for user's personal Google Calendar events not in task list
 }

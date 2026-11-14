@@ -36,3 +36,36 @@ export async function sendGmailAlert(
 
   return response.json();
 }
+
+export function escapeHtml(str: string): string {
+  return str
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+export function formatCustomReminderHtml(
+  rawMessage: string | undefined,
+  vars?: {
+    taskTitle?: string;
+    deadline?: string;
+    priority?: string;
+    owner?: string;
+    recipientEmail?: string;
+  }
+): string {
+  const trimmed = (rawMessage || '').trim();
+  if (!trimmed) return '';
+
+  let resolved = trimmed;
+  if (vars?.taskTitle) resolved = resolved.replace(/\{task\}/gi, vars.taskTitle);
+  if (vars?.deadline) resolved = resolved.replace(/\{deadline\}/gi, vars.deadline);
+  if (vars?.priority) resolved = resolved.replace(/\{priority\}/gi, vars.priority);
+  if (vars?.owner) resolved = resolved.replace(/\{owner\}/gi, vars.owner);
+  if (vars?.recipientEmail) resolved = resolved.replace(/\{email\}/gi, vars.recipientEmail);
+
+  return escapeHtml(resolved).replace(/\r?\n/g, '<br />');
+}
+

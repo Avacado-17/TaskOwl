@@ -23,22 +23,27 @@ import {
   Sliders,
   MoreHorizontal,
   GripVertical,
+  UserPlus,
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
-import { Task, LaneType, PriorityType, DashboardCustomization } from '../types';
+import { Task, LaneType, PriorityType, DashboardCustomization, Assignee, WorkspaceMember } from '../types';
 
 interface MainTableViewProps {
   tasks: Task[];
   customization: DashboardCustomization;
   isGoogleConnected: boolean;
+  workspaceMembers?: WorkspaceMember[];
+  activeWorkspaceName?: string;
   onUpdateTaskLane: (taskId: string, newLane: LaneType) => void;
   onUpdateTaskPriority?: (taskId: string, newPriority: PriorityType) => void;
   onUpdateTaskDeadline?: (taskId: string, newDeadlineIso: string) => void;
+  onUpdateTaskAssignee?: (taskId: string, assignee: Assignee) => void;
   onSyncTaskToCalendar: (task: Task) => Promise<void>;
   onEditTask: (task: Task) => void;
   onRequestDeleteTask: (task: Task) => void;
-  onAddNewTaskInline: (title: string, lane: LaneType, priority: PriorityType, dueDate?: string) => void;
+  onAddNewTaskInline: (title: string, lane: LaneType, priority: PriorityType, dueDate?: string, assignee?: Assignee) => void;
   onOpenNewTaskModal: (defaultLane?: LaneType) => void;
+  onOpenWorkspaceMembers?: () => void;
   onNavigateToAutomations: () => void;
   onNavigateToCalendar: () => void;
   onUpdateCustomization?: (updates: Partial<DashboardCustomization>) => void;
@@ -108,14 +113,18 @@ export const MainTableView: React.FC<MainTableViewProps> = ({
   tasks,
   customization,
   isGoogleConnected,
+  workspaceMembers = [],
+  activeWorkspaceName,
   onUpdateTaskLane,
   onUpdateTaskPriority,
   onUpdateTaskDeadline,
+  onUpdateTaskAssignee,
   onSyncTaskToCalendar,
   onEditTask,
   onRequestDeleteTask,
   onAddNewTaskInline,
   onOpenNewTaskModal,
+  onOpenWorkspaceMembers,
   onNavigateToAutomations,
   onNavigateToCalendar,
   onUpdateCustomization,
@@ -130,6 +139,8 @@ export const MainTableView: React.FC<MainTableViewProps> = ({
   const [isDoneGroupOpen, setIsDoneGroupOpen] = useState(true);
   const [selectedTaskIds, setSelectedTaskIds] = useState<Set<string>>(new Set());
   const [activeDeadlineMenuTaskId, setActiveDeadlineMenuTaskId] = useState<string | null>(null);
+  const [activeOwnerMenuTaskId, setActiveOwnerMenuTaskId] = useState<string | null>(null);
+  const [inlineAssigneeId, setInlineAssigneeId] = useState<string>('');
 
   // Drag and drop state for columns and rows
   const [draggedColKey, setDraggedColKey] = useState<string | null>(null);
@@ -239,9 +250,10 @@ export const MainTableView: React.FC<MainTableViewProps> = ({
 
   const allAssignees = useMemo(() => {
     const names = new Set<string>();
+    workspaceMembers.forEach((m) => names.add(m.name));
     tasks.forEach((t) => names.add(t.assignee.name));
     return Array.from(names);
-  }, [tasks]);
+  }, [tasks, workspaceMembers]);
 
   const handleToggleSelectAll = (isDoneGroup: boolean) => {
     const targetGroup = isDoneGroup ? doneTasks : activeTasks;
@@ -296,7 +308,18 @@ export const MainTableView: React.FC<MainTableViewProps> = ({
     e.preventDefault();
     if (!inlineTaskTitle.trim()) return;
 
-    onAddNewTaskInline(inlineTaskTitle.trim(), 'backlog', 'medium');
+    const chosenMember = workspaceMembers.find((m) => m.id === inlineAssigneeId);
+    const chosenAssignee: Assignee | undefined = chosenMember
+      ? {
+          name: chosenMember.name,
+          email: chosenMember.email,
+          role: chosenMember.role,
+          initials: chosenMember.initials,
+          ...(chosenMember.avatar ? { avatar: chosenMember.avatar } : {}),
+        }
+      : undefined;
+
+    onAddNewTaskInline(inlineTaskTitle.trim(), 'backlog', 'medium', undefined, chosenAssignee);
     setInlineTaskTitle('');
   };
 
@@ -466,20 +489,129 @@ export const MainTableView: React.FC<MainTableViewProps> = ({
     }
 
     if (colKey === 'owner') {
+      const handleSelectMember = (member: WorkspaceMember) => {
+        if (onUpdateTaskAssignee) {
+          onUpdateTaskAssignee(task.id, {
+            name: member.name,
+            email: member.email,
+            role: member.role,
+            initials: member.initials,
+            ...(member.avatar ? { avatar: member.avatar } : {}),
+          });
+        }
+        setActiveOwnerMenuTaskId(null);
+      };
+
       return (
-        <td key="owner" className="px-3 py-2.5 text-center">
+        <td key="owner" className="px-3 py-2.5 text-center relative">
           <div className="flex justify-center">
-            <div
-              className={`w-6 h-6 rounded-full text-[10px] font-bold flex items-center justify-center font-mono shadow-xs border ${
+            <button
+              type="button"
+              onClick={() =>
+                setActiveOwnerMenuTaskId(
+                  activeOwnerMenuTaskId === task.id ? null : task.id
+                )
+              }
+              className={`w-7 h-7 rounded-full text-[10px] font-bold flex items-center justify-center font-mono shadow-xs border transition-transform hover:scale-110 overflow-hidden ${
                 isDoneGroup
                   ? 'bg-emerald-900/60 border-emerald-500/30 text-emerald-400'
                   : 'bg-[var(--accent-container)] text-white border-white/20'
               }`}
-              title={task.assignee.name}
+              title={`${task.assignee.name}${task.assignee.email ? ` (${task.assignee.email})` : ''} — Click to reassign`}
             >
-              {task.assignee.initials || task.assignee.name.charAt(0)}
-            </div>
+              {task.assignee.avatar ? (
+                <img
+                  src={task.assignee.avatar}
+                  alt={task.assignee.name}
+                  className="w-full h-full object-cover"
+                  referrerPolicy="no-referrer"
+                />
+              ) : (
+                task.assignee.initials || task.assignee.name.charAt(0)
+              )}
+            </button>
           </div>
+
+          {activeOwnerMenuTaskId === task.id && (
+            <div className="absolute top-full left-1/2 -translate-x-1/2 z-50 mt-1 w-64 rounded-xl bg-[var(--bg-surface)] border border-[var(--border-strong)] shadow-2xl p-2 space-y-1 backdrop-blur-md text-left">
+              <div className="flex items-center justify-between px-2 py-1 border-b border-[var(--border-subtle)] mb-1">
+                <span className="text-[11px] font-bold text-[var(--text-primary)] font-heading">
+                  Assign Task To
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setActiveOwnerMenuTaskId(null)}
+                  className="text-[var(--text-muted)] hover:text-[var(--text-primary)] text-xs"
+                >
+                  ✕
+                </button>
+              </div>
+
+              {workspaceMembers.length === 0 ? (
+                <div className="px-2 py-2 text-[11px] text-[var(--text-muted)]">
+                  No workspace members added yet.
+                </div>
+              ) : (
+                <div className="max-h-48 overflow-y-auto space-y-1">
+                  {workspaceMembers.map((member) => {
+                    const isSelected =
+                      (task.assignee.email &&
+                        task.assignee.email.toLowerCase() === member.email.toLowerCase()) ||
+                      task.assignee.name.toLowerCase() === member.name.toLowerCase();
+
+                    return (
+                      <button
+                        key={member.id}
+                        type="button"
+                        onClick={() => handleSelectMember(member)}
+                        className={`w-full px-2 py-1.5 rounded-lg flex items-center justify-between gap-2 text-xs transition-colors ${
+                          isSelected
+                            ? 'bg-[var(--bg-surface-high)] text-[var(--accent-primary)] font-semibold'
+                            : 'hover:bg-[var(--bg-surface-high)]/70 text-[var(--text-primary)]'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2 min-w-0">
+                          <div className="w-6 h-6 rounded-full bg-[var(--accent-container)] text-white text-[10px] font-bold font-mono flex items-center justify-center shrink-0 overflow-hidden">
+                            {member.avatar ? (
+                              <img
+                                src={member.avatar}
+                                alt={member.name}
+                                className="w-full h-full object-cover"
+                                referrerPolicy="no-referrer"
+                              />
+                            ) : (
+                              member.initials
+                            )}
+                          </div>
+                          <div className="min-w-0">
+                            <div className="truncate text-xs">{member.name}</div>
+                            <div className="truncate text-[10px] text-[var(--text-muted)] font-mono">
+                              {member.email}
+                            </div>
+                          </div>
+                        </div>
+                        {isSelected && <Check className="w-3.5 h-3.5 shrink-0" />}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+
+              {onOpenWorkspaceMembers && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setActiveOwnerMenuTaskId(null);
+                    onOpenWorkspaceMembers();
+                  }}
+                  className="w-full mt-1 pt-1.5 border-t border-[var(--border-subtle)] px-2 py-1.5 rounded-lg flex items-center gap-1.5 text-[11px] font-semibold text-[var(--accent-primary)] hover:bg-[var(--bg-surface-high)]/60 transition-colors"
+                >
+                  <UserPlus className="w-3.5 h-3.5" />
+                  Add person by email...
+                </button>
+              )}
+            </div>
+          )}
         </td>
       );
     }
@@ -763,6 +895,18 @@ export const MainTableView: React.FC<MainTableViewProps> = ({
             />
           </div>
 
+          {onOpenWorkspaceMembers && (
+            <button
+              type="button"
+              onClick={onOpenWorkspaceMembers}
+              className="flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium rounded-md bg-[var(--bg-surface-lowest)] hover:bg-[var(--bg-surface-high)] border border-[var(--border-subtle)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-all whitespace-nowrap"
+              title="Add people by email to this workspace"
+            >
+              <UserPlus className="w-3.5 h-3.5 text-[var(--accent-primary)]" />
+              <span>Team{activeWorkspaceName ? ` (${workspaceMembers.length})` : ''}</span>
+            </button>
+          )}
+
           <button
             onClick={() => onOpenNewTaskModal('backlog')}
             className="flex items-center gap-1.5 px-3 py-1 text-xs font-semibold rounded-md bg-[var(--accent-primary)] text-[var(--accent-primary-text)] hover:opacity-90 shadow-sm transition-all whitespace-nowrap"
@@ -876,6 +1020,21 @@ export const MainTableView: React.FC<MainTableViewProps> = ({
                         onChange={(e) => setInlineTaskTitle(e.target.value)}
                         className="w-full bg-transparent text-xs text-[var(--text-primary)] placeholder-[var(--text-muted)] focus:outline-none py-1"
                       />
+                      {workspaceMembers.length > 0 && (
+                        <select
+                          value={inlineAssigneeId}
+                          onChange={(e) => setInlineAssigneeId(e.target.value)}
+                          aria-label="Assign new task to"
+                          className="px-2 py-1 text-[11px] rounded-md bg-[var(--bg-surface)] border border-[var(--border-subtle)] text-[var(--text-secondary)] focus:outline-none focus:border-[var(--accent-primary)] shrink-0 max-w-[160px]"
+                        >
+                          <option value="">Assign: Me</option>
+                          {workspaceMembers.map((m) => (
+                            <option key={m.id} value={m.id}>
+                              {m.name}
+                            </option>
+                          ))}
+                        </select>
+                      )}
                       {inlineTaskTitle.trim() && (
                         <button
                           type="submit"

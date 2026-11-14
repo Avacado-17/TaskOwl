@@ -33,15 +33,18 @@ import {
   Layers,
   Sparkles,
   Zap,
+  Users,
 } from 'lucide-react';
-import { Task, LaneType, PriorityType, DashboardCustomization } from '../types';
+import { Task, LaneType, PriorityType, DashboardCustomization, WorkspaceMember, Assignee } from '../types';
 import { sounds } from '../services/soundEffects';
 import { STATUS_CONFIG, PRIORITY_CONFIG } from './MainTableView';
 
 interface KanbanBoardProps {
   tasks: Task[];
   customization?: DashboardCustomization;
+  workspaceMembers?: WorkspaceMember[];
   onUpdateTaskLane: (taskId: string, newLane: LaneType) => void;
+  onUpdateTaskAssignee?: (taskId: string, assignee: Assignee) => void;
   onEditTask: (task: Task) => void;
   onRequestDeleteTask: (task: Task) => void;
   onSyncTaskToCalendar: (task: Task) => Promise<void>;
@@ -60,7 +63,9 @@ const LANES: { id: LaneType; title: string; subtitle: string }[] = [
 export const KanbanBoard: React.FC<KanbanBoardProps> = ({
   tasks,
   customization,
+  workspaceMembers = [],
   onUpdateTaskLane,
+  onUpdateTaskAssignee,
   onEditTask,
   onRequestDeleteTask,
   onSyncTaskToCalendar,
@@ -70,6 +75,7 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [priorityFilter, setPriorityFilter] = useState<'all' | PriorityType>('all');
+  const [assigneeFilter, setAssigneeFilter] = useState<string>('all');
   const [onlyUnsynced, setOnlyUnsynced] = useState(false);
   const [draggedTaskId, setDraggedTaskId] = useState<string | null>(null);
   const [draggedLaneId, setDraggedLaneId] = useState<LaneType | null>(null);
@@ -316,6 +322,9 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
       if (!matchesTitle && !matchesDesc && !matchesTags && !matchesAssignee) return false;
     }
     if (priorityFilter !== 'all' && task.priority !== priorityFilter) {
+      return false;
+    }
+    if (assigneeFilter !== 'all' && task.assignee.name !== assigneeFilter) {
       return false;
     }
     if (onlyUnsynced && task.syncedToCalendar) {
@@ -659,8 +668,25 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
           />
         </div>
 
-        {/* Priority Filter Controls */}
+        {/* Priority & Assignee Filter Controls */}
         <div className="flex flex-wrap items-center gap-2">
+          <div className="relative">
+            <select
+              value={assigneeFilter}
+              onChange={(e) => setAssigneeFilter(e.target.value)}
+              aria-label="Filter kanban by assignee"
+              className="pl-7 pr-3 py-1.5 text-xs rounded-lg bg-[var(--bg-surface-lowest)] border border-[var(--border-subtle)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] focus:outline-none cursor-pointer font-medium"
+            >
+              <option value="all">Owner: All</option>
+              {Array.from(new Set([...workspaceMembers.map((m) => m.name), ...uniqueAssignees])).map((name) => (
+                <option key={name} value={name}>
+                  {name}
+                </option>
+              ))}
+            </select>
+            <Users className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-[var(--text-muted)] pointer-events-none" />
+          </div>
+
           <div className="flex items-center gap-1 p-1 bg-[var(--bg-surface-lowest)] rounded-lg border border-[var(--border-subtle)]">
             {(['all', 'urgent', 'high', 'medium', 'low'] as const).map((p) => (
               <button
@@ -896,15 +922,63 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
                         <div className="mt-3 pt-2.5 border-t border-[var(--border-subtle)] flex items-center justify-between text-xs">
                           {/* Assignee */}
                           <div
-                            className="flex items-center gap-1.5"
-                            title={`${task.assignee.name} (${task.assignee.role})`}
+                            className="flex items-center gap-1.5 min-w-0"
+                            title={`${task.assignee.name}${task.assignee.email ? ` (${task.assignee.email})` : ''} · ${task.assignee.role}`}
                           >
-                            <div className="w-5 h-5 rounded-full bg-[var(--bg-surface-high)] border border-[var(--border-subtle)] text-[10px] font-mono font-bold text-[var(--accent-primary)] flex items-center justify-center">
-                              {task.assignee.initials || task.assignee.name.charAt(0)}
+                            <div className="w-5 h-5 rounded-full bg-[var(--bg-surface-high)] border border-[var(--border-subtle)] text-[10px] font-mono font-bold text-[var(--accent-primary)] flex items-center justify-center shrink-0 overflow-hidden">
+                              {task.assignee.avatar ? (
+                                <img
+                                  src={task.assignee.avatar}
+                                  alt={task.assignee.name}
+                                  className="w-full h-full object-cover"
+                                  referrerPolicy="no-referrer"
+                                />
+                              ) : (
+                                task.assignee.initials || task.assignee.name.charAt(0)
+                              )}
                             </div>
-                            <span className="text-[11px] text-[var(--text-secondary)] truncate max-w-[80px]">
-                              {task.assignee.name.split(' ')[0]}
-                            </span>
+                            {onUpdateTaskAssignee && workspaceMembers.length > 0 ? (
+                              <select
+                                value={
+                                  workspaceMembers.find(
+                                    (m) =>
+                                      (task.assignee.email &&
+                                        m.email.toLowerCase() === task.assignee.email.toLowerCase()) ||
+                                      m.name.toLowerCase() === task.assignee.name.toLowerCase()
+                                  )?.id || ''
+                                }
+                                onChange={(e) => {
+                                  const member = workspaceMembers.find((m) => m.id === e.target.value);
+                                  if (member) {
+                                    onUpdateTaskAssignee(task.id, {
+                                      name: member.name,
+                                      email: member.email,
+                                      role: member.role,
+                                      initials: member.initials,
+                                      ...(member.avatar ? { avatar: member.avatar } : {}),
+                                    });
+                                  }
+                                }}
+                                aria-label="Reassign task"
+                                className="bg-transparent text-[11px] text-[var(--text-secondary)] hover:text-[var(--text-primary)] focus:outline-none cursor-pointer truncate max-w-[100px]"
+                              >
+                                {!workspaceMembers.some(
+                                  (m) =>
+                                    (task.assignee.email &&
+                                      m.email.toLowerCase() === task.assignee.email.toLowerCase()) ||
+                                    m.name.toLowerCase() === task.assignee.name.toLowerCase()
+                                ) && <option value="">{task.assignee.name.split(' ')[0]}</option>}
+                                {workspaceMembers.map((m) => (
+                                  <option key={m.id} value={m.id} className="bg-[var(--bg-surface)] text-[var(--text-primary)]">
+                                    {m.name}
+                                  </option>
+                                ))}
+                              </select>
+                            ) : (
+                              <span className="text-[11px] text-[var(--text-secondary)] truncate max-w-[80px]">
+                                {task.assignee.name.split(' ')[0]}
+                              </span>
+                            )}
                           </div>
 
                           {/* Deadline countdown & Calendar indicator */}

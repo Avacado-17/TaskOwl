@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { X, Calendar, Clock, User as UserIcon, Tag, AlertCircle } from 'lucide-react';
-import { Task, LaneType, PriorityType } from '../types';
+import { X, Calendar, Clock, User as UserIcon, Tag, AlertCircle, UserPlus, Check } from 'lucide-react';
+import { Task, LaneType, PriorityType, WorkspaceMember, Assignee } from '../types';
+import { deriveInitials, deriveNameFromEmail } from '../services/firebase';
 
 interface TaskModalProps {
   isOpen: boolean;
@@ -9,6 +10,9 @@ interface TaskModalProps {
   initialTask?: Task | null;
   isGoogleConnected: boolean;
   defaultAssigneeName?: string;
+  defaultAssigneeEmail?: string;
+  workspaceMembers?: WorkspaceMember[];
+  onQuickAddMember?: (email: string, name?: string, role?: string) => Promise<WorkspaceMember | null>;
 }
 
 export const TaskModal: React.FC<TaskModalProps> = ({
@@ -17,7 +21,10 @@ export const TaskModal: React.FC<TaskModalProps> = ({
   onSave,
   initialTask,
   isGoogleConnected,
-  defaultAssigneeName = 'Lead Architect',
+  defaultAssigneeName = 'Workspace Owner',
+  defaultAssigneeEmail = '',
+  workspaceMembers = [],
+  onQuickAddMember,
 }) => {
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
@@ -26,7 +33,17 @@ export const TaskModal: React.FC<TaskModalProps> = ({
   const [deadline, setDeadline] = useState('');
   const [estimatedHours, setEstimatedHours] = useState(3);
   const [assigneeName, setAssigneeName] = useState(defaultAssigneeName);
-  const [assigneeRole, setAssigneeRole] = useState('Contributor');
+  const [assigneeEmail, setAssigneeEmail] = useState(defaultAssigneeEmail);
+  const [assigneeRole, setAssigneeRole] = useState('Owner');
+  const [assigneeAvatar, setAssigneeAvatar] = useState<string | undefined>(undefined);
+  const [selectedMemberId, setSelectedMemberId] = useState<string>('custom');
+
+  // Quick invite new member inline
+  const [showQuickInvite, setShowQuickInvite] = useState(false);
+  const [quickEmail, setQuickEmail] = useState('');
+  const [quickName, setQuickName] = useState('');
+  const [isInviting, setIsInviting] = useState(false);
+
   const [tagsInput, setTagsInput] = useState('Architecture, Cloud');
   const [syncToCalendar, setSyncToCalendar] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -38,7 +55,6 @@ export const TaskModal: React.FC<TaskModalProps> = ({
       setDescription(initialTask.description);
       setLane(initialTask.lane);
       setPriority(initialTask.priority);
-      // Format deadline for datetime-local: YYYY-MM-DDTHH:mm
       const d = new Date(initialTask.deadline);
       const localISO = new Date(d.getTime() - d.getTimezoneOffset() * 60000)
         .toISOString()
@@ -46,11 +62,20 @@ export const TaskModal: React.FC<TaskModalProps> = ({
       setDeadline(localISO);
       setEstimatedHours(initialTask.estimatedHours);
       setAssigneeName(initialTask.assignee.name);
+      setAssigneeEmail(initialTask.assignee.email || '');
       setAssigneeRole(initialTask.assignee.role);
+      setAssigneeAvatar(initialTask.assignee.avatar);
       setTagsInput(initialTask.tags.join(', '));
       setSyncToCalendar(initialTask.syncedToCalendar);
+
+      const matched = workspaceMembers.find(
+        (m) =>
+          (initialTask.assignee.email &&
+            m.email.toLowerCase() === initialTask.assignee.email.toLowerCase()) ||
+          m.name.toLowerCase() === initialTask.assignee.name.toLowerCase()
+      );
+      setSelectedMemberId(matched ? matched.id : 'custom');
     } else {
-      // Default deadline: tomorrow at 17:00
       const tomorrow = new Date();
       tomorrow.setDate(tomorrow.getDate() + 1);
       tomorrow.setHours(17, 0, 0, 0);
@@ -64,15 +89,80 @@ export const TaskModal: React.FC<TaskModalProps> = ({
       setPriority('medium');
       setDeadline(localISO);
       setEstimatedHours(3);
-      setAssigneeName(defaultAssigneeName);
-      setAssigneeRole('Contributor');
+
+      const defaultMember =
+        workspaceMembers.find(
+          (m) => defaultAssigneeEmail && m.email.toLowerCase() === defaultAssigneeEmail.toLowerCase()
+        ) || workspaceMembers[0];
+
+      if (defaultMember) {
+        setSelectedMemberId(defaultMember.id);
+        setAssigneeName(defaultMember.name);
+        setAssigneeEmail(defaultMember.email);
+        setAssigneeRole(defaultMember.role);
+        setAssigneeAvatar(defaultMember.avatar);
+      } else {
+        setSelectedMemberId('custom');
+        setAssigneeName(defaultAssigneeName);
+        setAssigneeEmail(defaultAssigneeEmail);
+        setAssigneeRole('Owner');
+        setAssigneeAvatar(undefined);
+      }
+
       setTagsInput('Agile, Delivery');
       setSyncToCalendar(isGoogleConnected);
     }
+    setShowQuickInvite(false);
+    setQuickEmail('');
+    setQuickName('');
     setError(null);
-  }, [initialTask, isOpen, isGoogleConnected, defaultAssigneeName]);
+  }, [initialTask, isOpen, isGoogleConnected, defaultAssigneeName, defaultAssigneeEmail, workspaceMembers]);
 
   if (!isOpen) return null;
+
+  const handleSelectMember = (memberId: string) => {
+    setSelectedMemberId(memberId);
+    if (memberId === 'custom') return;
+    const member = workspaceMembers.find((m) => m.id === memberId);
+    if (member) {
+      setAssigneeName(member.name);
+      setAssigneeEmail(member.email);
+      setAssigneeRole(member.role);
+      setAssigneeAvatar(member.avatar);
+    }
+  };
+
+  const handleQuickInviteSubmit = async () => {
+    const trimmedEmail = quickEmail.trim().toLowerCase();
+    if (!trimmedEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmedEmail)) {
+      setError('Enter a valid email address to add to the workspace.');
+      return;
+    }
+    if (!onQuickAddMember) return;
+    setIsInviting(true);
+    setError(null);
+    try {
+      const added = await onQuickAddMember(
+        trimmedEmail,
+        quickName.trim() || deriveNameFromEmail(trimmedEmail),
+        'Member'
+      );
+      if (added) {
+        setSelectedMemberId(added.id);
+        setAssigneeName(added.name);
+        setAssigneeEmail(added.email);
+        setAssigneeRole(added.role);
+        setAssigneeAvatar(added.avatar);
+        setShowQuickInvite(false);
+        setQuickEmail('');
+        setQuickName('');
+      }
+    } catch (err: any) {
+      setError(err?.message || 'Failed to add member to workspace.');
+    } finally {
+      setIsInviting(false);
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -92,29 +182,30 @@ export const TaskModal: React.FC<TaskModalProps> = ({
       const parsedTags = tagsInput
         .split(',')
         .map((t) => t.trim())
-        .filter(Boolean);
+        .filter(Boolean)
+        .slice(0, 50);
 
-      const initials = assigneeName
-        .split(' ')
-        .map((n) => n[0])
-        .join('')
-        .toUpperCase()
-        .slice(0, 2);
+      const finalName = assigneeName.trim() || 'Assignee';
+      const initials = deriveInitials(finalName);
+
+      const assigneePayload: Assignee = {
+        name: finalName.slice(0, 120),
+        role: (assigneeRole.trim() || 'Member').slice(0, 80),
+        initials,
+        ...(assigneeEmail.trim() ? { email: assigneeEmail.trim().toLowerCase().slice(0, 254) } : {}),
+        ...(assigneeAvatar ? { avatar: assigneeAvatar.slice(0, 500) } : {}),
+      };
 
       await onSave(
         {
-          title: title.trim(),
-          description: description.trim(),
+          title: title.trim().slice(0, 500),
+          description: description.trim().slice(0, 5000),
           lane,
           priority,
           deadline: new Date(deadline).toISOString(),
-          estimatedHours: Number(estimatedHours) || 1,
+          estimatedHours: Number.isFinite(Number(estimatedHours)) ? Math.max(0, Number(estimatedHours)) : 1,
           tags: parsedTags.length > 0 ? parsedTags : ['General'],
-          assignee: {
-            name: assigneeName.trim() || 'Assignee',
-            role: assigneeRole.trim() || 'Contributor',
-            initials: initials || 'AS',
-          },
+          assignee: assigneePayload,
         },
         syncToCalendar && isGoogleConnected
       );
@@ -141,7 +232,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({
           {initialTask ? 'Edit Agile Task' : 'Create New Agile Task'}
         </h2>
         <p className="mt-1 text-xs text-[var(--text-secondary)]">
-          Set sprint lane, deadlines, and real-time Google Calendar integration.
+          Set sprint lane, assignee, deadlines, and real-time Google Calendar integration.
         </p>
 
         {error && (
@@ -192,10 +283,10 @@ export const TaskModal: React.FC<TaskModalProps> = ({
                 onChange={(e) => setLane(e.target.value as LaneType)}
                 className="w-full px-3 py-2 text-sm rounded-lg bg-[var(--bg-surface-lowest)] border border-[var(--border-subtle)] text-[var(--text-primary)] focus:outline-none focus:border-[var(--accent-primary)]"
               >
-                <option value="backlog">Backlog</option>
-                <option value="in_progress">In Progress</option>
+                <option value="backlog">Not Started</option>
+                <option value="in_progress">Working on it</option>
                 <option value="review">In Review</option>
-                <option value="done">Completed</option>
+                <option value="done">Done</option>
               </select>
             </div>
 
@@ -241,7 +332,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({
                 type="number"
                 min="0.5"
                 step="0.5"
-                max="100"
+                max="1000"
                 value={estimatedHours}
                 onChange={(e) => setEstimatedHours(parseFloat(e.target.value))}
                 className="w-full px-3 py-2 text-sm rounded-lg bg-[var(--bg-surface-lowest)] border border-[var(--border-subtle)] text-[var(--text-primary)] focus:outline-none focus:border-[var(--accent-primary)] font-mono text-xs"
@@ -249,32 +340,101 @@ export const TaskModal: React.FC<TaskModalProps> = ({
             </div>
           </div>
 
-          {/* Assignee & Role */}
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-xs font-semibold text-[var(--text-secondary)] uppercase tracking-wider mb-1 flex items-center gap-1.5">
+          {/* Workspace Member Assignee Selector */}
+          <div className="p-3.5 rounded-xl bg-[var(--bg-surface-lowest)] border border-[var(--border-subtle)] space-y-3">
+            <div className="flex items-center justify-between gap-2">
+              <label className="text-xs font-semibold text-[var(--text-secondary)] uppercase tracking-wider flex items-center gap-1.5">
                 <UserIcon className="w-3.5 h-3.5 text-[var(--accent-primary)]" />
-                Assignee Name
+                Assign To Workspace Member
               </label>
-              <input
-                type="text"
-                value={assigneeName}
-                onChange={(e) => setAssigneeName(e.target.value)}
-                className="w-full px-3 py-2 text-sm rounded-lg bg-[var(--bg-surface-lowest)] border border-[var(--border-subtle)] text-[var(--text-primary)] focus:outline-none focus:border-[var(--accent-primary)]"
-              />
+              {onQuickAddMember && (
+                <button
+                  type="button"
+                  onClick={() => setShowQuickInvite((v) => !v)}
+                  className="flex items-center gap-1 text-[11px] font-semibold text-[var(--accent-primary)] hover:underline"
+                >
+                  <UserPlus className="w-3 h-3" />
+                  {showQuickInvite ? 'Cancel invite' : 'Add person by email'}
+                </button>
+              )}
             </div>
 
-            <div>
-              <label className="block text-xs font-semibold text-[var(--text-secondary)] uppercase tracking-wider mb-1">
-                Assignee Role
-              </label>
-              <input
-                type="text"
-                value={assigneeRole}
-                onChange={(e) => setAssigneeRole(e.target.value)}
-                className="w-full px-3 py-2 text-sm rounded-lg bg-[var(--bg-surface-lowest)] border border-[var(--border-subtle)] text-[var(--text-primary)] focus:outline-none focus:border-[var(--accent-primary)]"
-              />
-            </div>
+            {workspaceMembers.length > 0 && (
+              <select
+                value={selectedMemberId}
+                onChange={(e) => handleSelectMember(e.target.value)}
+                className="w-full px-3 py-2 text-xs rounded-lg bg-[var(--bg-surface)] border border-[var(--border-subtle)] text-[var(--text-primary)] focus:outline-none focus:border-[var(--accent-primary)]"
+              >
+                {workspaceMembers.map((m) => (
+                  <option key={m.id} value={m.id}>
+                    {m.name} ({m.email}) — {m.workspaceRole === 'owner' ? 'Owner' : m.role}
+                  </option>
+                ))}
+                <option value="custom">Custom / Manual Entry...</option>
+              </select>
+            )}
+
+            {showQuickInvite && onQuickAddMember && (
+              <div className="p-2.5 rounded-lg bg-[var(--bg-surface)] border border-[var(--accent-primary)]/40 space-y-2">
+                <div className="text-[11px] font-medium text-[var(--text-primary)]">
+                  Invite someone by email to this workspace and assign them:
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  <input
+                    type="email"
+                    value={quickEmail}
+                    onChange={(e) => setQuickEmail(e.target.value)}
+                    placeholder="teammate@gmail.com"
+                    className="px-2.5 py-1.5 text-xs rounded-md bg-[var(--bg-surface-lowest)] border border-[var(--border-subtle)] text-[var(--text-primary)] focus:outline-none focus:border-[var(--accent-primary)]"
+                  />
+                  <input
+                    type="text"
+                    value={quickName}
+                    onChange={(e) => setQuickName(e.target.value)}
+                    placeholder="Name (optional)"
+                    className="px-2.5 py-1.5 text-xs rounded-md bg-[var(--bg-surface-lowest)] border border-[var(--border-subtle)] text-[var(--text-primary)] focus:outline-none focus:border-[var(--accent-primary)]"
+                  />
+                </div>
+                <div className="flex justify-end">
+                  <button
+                    type="button"
+                    onClick={handleQuickInviteSubmit}
+                    disabled={isInviting}
+                    className="px-3 py-1 text-xs font-semibold rounded-md bg-[var(--accent-primary)] text-[var(--accent-primary-text)] flex items-center gap-1"
+                  >
+                    <Check className="w-3 h-3" />
+                    {isInviting ? 'Adding...' : 'Add & Assign'}
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {(selectedMemberId === 'custom' || workspaceMembers.length === 0) && (
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-[11px] text-[var(--text-muted)] mb-1">
+                    Assignee Name
+                  </label>
+                  <input
+                    type="text"
+                    value={assigneeName}
+                    onChange={(e) => setAssigneeName(e.target.value)}
+                    className="w-full px-2.5 py-1.5 text-xs rounded-lg bg-[var(--bg-surface)] border border-[var(--border-subtle)] text-[var(--text-primary)] focus:outline-none focus:border-[var(--accent-primary)]"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[11px] text-[var(--text-muted)] mb-1">
+                    Assignee Role
+                  </label>
+                  <input
+                    type="text"
+                    value={assigneeRole}
+                    onChange={(e) => setAssigneeRole(e.target.value)}
+                    className="w-full px-2.5 py-1.5 text-xs rounded-lg bg-[var(--bg-surface)] border border-[var(--border-subtle)] text-[var(--text-primary)] focus:outline-none focus:border-[var(--accent-primary)]"
+                  />
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Tags */}
@@ -304,7 +464,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({
                 </span>
                 <span className="text-[11px] text-[var(--text-secondary)]">
                   {isGoogleConnected
-                    ? 'Adds scheduled deadline slot with reminders to your primary calendar'
+                    ? 'Adds scheduled deadline slot & invites assignee if email is set'
                     : 'Requires Google Sign-in to sync in real time'}
                 </span>
               </div>

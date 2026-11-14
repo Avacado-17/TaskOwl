@@ -49,9 +49,9 @@ export async function createCalendarEvent(
   const durationMs = Math.max(1, task.estimatedHours || 1) * 60 * 60 * 1000;
   const startTime = new Date(taskDeadline.getTime() - durationMs);
 
-  const eventPayload = {
+  const eventPayload: Record<string, unknown> = {
     summary: `[Task] ${task.title}`,
-    description: `Priority: ${task.priority.toUpperCase()}\nLane: ${task.lane}\nEstimated: ${task.estimatedHours}h\nAssignee: ${task.assignee.name}\n\n${task.description || ''}\n\nManaged by TaskOwl.`,
+    description: `Priority: ${task.priority.toUpperCase()}\nLane: ${task.lane}\nEstimated: ${task.estimatedHours}h\nAssignee: ${task.assignee.name}${task.assignee.email ? ` (${task.assignee.email})` : ''}\n\n${task.description || ''}\n\nManaged by TaskOwl.`,
     start: {
       dateTime: startTime.toISOString(),
       timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
@@ -69,6 +69,15 @@ export async function createCalendarEvent(
     },
     colorId: task.priority === 'urgent' ? '11' : task.priority === 'high' ? '6' : '7', // Red, Orange, Peacock
   };
+
+  if (task.assignee.email && task.assignee.email.includes('@')) {
+    eventPayload.attendees = [
+      {
+        email: task.assignee.email,
+        displayName: task.assignee.name,
+      },
+    ];
+  }
 
   const response = await fetch(`${CALENDAR_API_BASE}/events`, {
     method: 'POST',
