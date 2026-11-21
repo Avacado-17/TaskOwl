@@ -44,6 +44,7 @@ interface MainTableViewProps {
   onAddNewTaskInline: (title: string, lane: LaneType, priority: PriorityType, dueDate?: string, assignee?: Assignee) => void;
   onOpenNewTaskModal: (defaultLane?: LaneType) => void;
   onOpenWorkspaceMembers?: () => void;
+  onOpenShareWorkspace?: () => void;
   onNavigateToAutomations: () => void;
   onNavigateToCalendar: () => void;
   onUpdateCustomization?: (updates: Partial<DashboardCustomization>) => void;
@@ -125,6 +126,7 @@ export const MainTableView: React.FC<MainTableViewProps> = ({
   onAddNewTaskInline,
   onOpenNewTaskModal,
   onOpenWorkspaceMembers,
+  onOpenShareWorkspace,
   onNavigateToAutomations,
   onNavigateToCalendar,
   onUpdateCustomization,
@@ -904,6 +906,18 @@ export const MainTableView: React.FC<MainTableViewProps> = ({
             >
               <UserPlus className="w-3.5 h-3.5 text-[var(--accent-primary)]" />
               <span>Team{activeWorkspaceName ? ` (${workspaceMembers.length})` : ''}</span>
+            </button>
+          )}
+
+          {onOpenShareWorkspace && (
+            <button
+              type="button"
+              onClick={onOpenShareWorkspace}
+              className="flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium rounded-md bg-[var(--bg-surface-lowest)] hover:bg-[var(--bg-surface-high)] border border-[var(--border-subtle)] text-[var(--text-secondary)] hover:text-[var(--accent-primary)] transition-all whitespace-nowrap"
+              title="Share workspace via unrestricted link"
+            >
+              <Share2 className="w-3.5 h-3.5 text-[var(--accent-primary)]" />
+              <span>Share</span>
             </button>
           )}
 

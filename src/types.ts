@@ -44,8 +44,26 @@ export interface Workspace {
   ownerId: string;
   ownerEmail: string;
   memberEmails: string[];
+  shareEnabled?: boolean;
+  shareToken?: string;
   createdAt: string;
   updatedAt?: string;
+}
+
+export interface WorkspaceShare {
+  token: string;
+  workspaceId: string;
+  workspaceName: string;
+  ownerId: string;
+  active: boolean;
+  createdAt: string;
+}
+
+export interface SavedWorkspaceShare {
+  workspaceId: string;
+  shareToken: string;
+  workspaceName: string;
+  savedAt: string;
 }
 
 export interface WorkspaceMember {

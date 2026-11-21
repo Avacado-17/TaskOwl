@@ -10,10 +10,38 @@
         "ownerId": { "type": "string", "maxLength": 128 },
         "ownerEmail": { "type": "string", "maxLength": 254 },
         "memberEmails": { "type": "array", "items": { "type": "string" } },
+        "shareEnabled": { "type": "boolean" },
+        "shareToken": { "type": "string", "maxLength": 128 },
         "createdAt": { "type": "string", "format": "date-time", "maxLength": 64 },
         "updatedAt": { "type": "string", "format": "date-time", "maxLength": 64 }
       },
       "required": ["id", "name", "ownerId", "ownerEmail", "memberEmails", "createdAt"]
+    },
+    "WorkspaceShare": {
+      "title": "Workspace Share Link",
+      "description": "Public share token lookup mapping to an unrestricted shared workspace.",
+      "type": "object",
+      "properties": {
+        "token": { "type": "string", "maxLength": 128 },
+        "workspaceId": { "type": "string", "maxLength": 128 },
+        "workspaceName": { "type": "string", "maxLength": 120 },
+        "ownerId": { "type": "string", "maxLength": 128 },
+        "active": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time", "maxLength": 64 }
+      },
+      "required": ["token", "workspaceId", "workspaceName", "ownerId", "active", "createdAt"]
+    },
+    "SavedWorkspaceShare": {
+      "title": "Saved Shared Workspace",
+      "description": "A shared workspace bookmark saved by a signed-in user who opened a share link.",
+      "type": "object",
+      "properties": {
+        "workspaceId": { "type": "string", "maxLength": 128 },
+        "shareToken": { "type": "string", "maxLength": 128 },
+        "workspaceName": { "type": "string", "maxLength": 120 },
+        "savedAt": { "type": "string", "format": "date-time", "maxLength": 64 }
+      },
+      "required": ["workspaceId", "shareToken", "workspaceName", "savedAt"]
     },
     "WorkspaceMember": {
       "title": "Workspace Member",
@@ -139,7 +167,11 @@
   "firestore": {
     "/workspaces/{workspaceId}": {
       "schema": "Workspace",
-      "description": "Shared collaborative workspaces accessible to owner and invited member emails."
+      "description": "Shared collaborative workspaces accessible to owner, invited member emails, or anyone with an active share link."
+    },
+    "/workspaceShares/{shareToken}": {
+      "schema": "WorkspaceShare",
+      "description": "Lookup index mapping a generated share token to its shared workspace ID."
     },
     "/workspaces/{workspaceId}/members/{memberId}": {
       "schema": "WorkspaceMember",
@@ -164,6 +196,10 @@
     "/workspaces/{workspaceId}/notifications/{notificationId}": {
       "schema": "InAppNotification",
       "description": "Notifications for a workspace."
+    },
+    "/users/{userId}/savedShares/{workspaceId}": {
+      "schema": "SavedWorkspaceShare",
+      "description": "Shared workspaces bookmarked by a signed-in user via share link."
     },
     "/users/{userId}/tasks/{taskId}": {
       "schema": "Task",

@@ -12,6 +12,11 @@ import {
   Shield,
   Send,
   AlertCircle,
+  Link2,
+  Copy,
+  RefreshCw,
+  Globe,
+  Link2Off,
 } from 'lucide-react';
 import { Workspace, WorkspaceMember, Task } from '../types';
 
@@ -35,7 +40,11 @@ interface WorkspaceMembersModalProps {
     sendInviteEmail?: boolean
   ) => Promise<void>;
   onRemoveMember: (member: WorkspaceMember) => Promise<void>;
+  onEnableShareLink: (workspaceId: string) => Promise<string | null>;
+  onRegenerateShareLink: (workspaceId: string) => Promise<string | null>;
+  onDisableShareLink: (workspaceId: string) => Promise<void>;
   onSignIn: () => void;
+  focusShareSection?: boolean;
 }
 
 export const WorkspaceMembersModal: React.FC<WorkspaceMembersModalProps> = ({
@@ -53,7 +62,11 @@ export const WorkspaceMembersModal: React.FC<WorkspaceMembersModalProps> = ({
   onRenameWorkspace,
   onAddMember,
   onRemoveMember,
+  onEnableShareLink,
+  onRegenerateShareLink,
+  onDisableShareLink,
   onSignIn,
+  focusShareSection = false,
 }) => {
   const [inviteEmail, setInviteEmail] = useState('');
   const [inviteName, setInviteName] = useState('');
@@ -67,14 +80,106 @@ export const WorkspaceMembersModal: React.FC<WorkspaceMembersModalProps> = ({
   const [isRenamingWs, setIsRenamingWs] = useState(false);
   const [renameValue, setRenameValue] = useState('');
 
+  const [isUpdatingShare, setIsUpdatingShare] = useState(false);
+  const [copiedLink, setCopiedLink] = useState(false);
+  const shareSectionRef = React.useRef<HTMLDivElement | null>(null);
+
   const [error, setError] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
+
+  React.useEffect(() => {
+    if (isOpen && focusShareSection && shareSectionRef.current) {
+      shareSectionRef.current.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+  }, [isOpen, focusShareSection]);
 
   if (!isOpen) return null;
 
   const isOwner = Boolean(
     currentUserUid && activeWorkspace && activeWorkspace.ownerId === currentUserUid
   );
+
+  const shareUrl =
+    activeWorkspace?.shareEnabled && activeWorkspace?.shareToken
+      ? `${window.location.origin}${window.location.pathname}?share=${activeWorkspace.shareToken}`
+      : '';
+
+  const copyToClipboard = async (text: string) => {
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        await navigator.clipboard.writeText(text);
+      } else {
+        const ta = document.createElement('textarea');
+        ta.value = text;
+        ta.style.position = 'fixed';
+        ta.style.opacity = '0';
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand('copy');
+        document.body.removeChild(ta);
+      }
+      setCopiedLink(true);
+      setTimeout(() => setCopiedLink(false), 2500);
+    } catch {
+      setError('Could not copy automatically. Please select the link and copy it manually.');
+    }
+  };
+
+  const handleEnableShare = async () => {
+    if (!activeWorkspace) return;
+    setError(null);
+    setSuccessMsg(null);
+    setIsUpdatingShare(true);
+    try {
+      const token = await onEnableShareLink(activeWorkspace.id);
+      if (token) {
+        const generatedUrl = `${window.location.origin}${window.location.pathname}?share=${token}`;
+        await copyToClipboard(generatedUrl);
+        setSuccessMsg('Share link generated and copied to clipboard.');
+        setTimeout(() => setSuccessMsg(null), 4000);
+      }
+    } catch (err: any) {
+      setError(err?.message || 'Failed to generate share link.');
+    } finally {
+      setIsUpdatingShare(false);
+    }
+  };
+
+  const handleRegenerateShare = async () => {
+    if (!activeWorkspace) return;
+    setError(null);
+    setSuccessMsg(null);
+    setIsUpdatingShare(true);
+    try {
+      const token = await onRegenerateShareLink(activeWorkspace.id);
+      if (token) {
+        const generatedUrl = `${window.location.origin}${window.location.pathname}?share=${token}`;
+        await copyToClipboard(generatedUrl);
+        setSuccessMsg('Generated a new share link and invalidated the previous one.');
+        setTimeout(() => setSuccessMsg(null), 4000);
+      }
+    } catch (err: any) {
+      setError(err?.message || 'Failed to regenerate share link.');
+    } finally {
+      setIsUpdatingShare(false);
+    }
+  };
+
+  const handleDisableShare = async () => {
+    if (!activeWorkspace) return;
+    setError(null);
+    setSuccessMsg(null);
+    setIsUpdatingShare(true);
+    try {
+      await onDisableShareLink(activeWorkspace.id);
+      setSuccessMsg('Link sharing disabled. Only invited email members can access this workspace.');
+      setTimeout(() => setSuccessMsg(null), 4000);
+    } catch (err: any) {
+      setError(err?.message || 'Failed to disable share link.');
+    } finally {
+      setIsUpdatingShare(false);
+    }
+  };
 
   const handleInviteSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -180,17 +285,54 @@ export const WorkspaceMembersModal: React.FC<WorkspaceMembersModalProps> = ({
         </div>
 
         {!currentUserUid ? (
-          <div className="p-6 rounded-xl bg-[var(--bg-surface-lowest)] border border-[var(--border-subtle)] text-center space-y-3">
-            <p className="text-sm text-[var(--text-primary)] font-medium">
-              Sign in with Google to manage workspaces and invite teammates by email.
-            </p>
-            <button
-              type="button"
-              onClick={onSignIn}
-              className="px-4 py-2 text-xs font-semibold rounded-lg bg-[var(--accent-primary)] text-[var(--accent-primary-text)] hover:opacity-90 transition-all"
-            >
-              Sign in with Google
-            </button>
+          <div className="space-y-4">
+            {shareUrl && activeWorkspace && (
+              <div
+                ref={shareSectionRef}
+                className="p-4 rounded-xl bg-[var(--bg-surface-lowest)] border border-[var(--accent-primary)]/40 space-y-3"
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-[var(--accent-primary)]">
+                    <Globe className="w-3.5 h-3.5" />
+                    <span>Shared Workspace Link</span>
+                  </div>
+                  <span className="text-[11px] font-mono text-emerald-400">Active · Open Access</span>
+                </div>
+                <p className="text-xs text-[var(--text-secondary)]">
+                  Anyone with this link can open and collaborate on <strong>{activeWorkspace.name}</strong> without restrictions.
+                </p>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="text"
+                    readOnly
+                    value={shareUrl}
+                    onFocus={(e) => e.currentTarget.select()}
+                    className="flex-1 px-3 py-2 text-xs font-mono rounded-lg bg-[var(--bg-surface)] border border-[var(--border-subtle)] text-[var(--text-primary)] focus:outline-none"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => copyToClipboard(shareUrl)}
+                    className="px-3.5 py-2 text-xs font-semibold rounded-lg bg-[var(--accent-primary)] text-[var(--accent-primary-text)] hover:opacity-90 flex items-center gap-1.5 shrink-0"
+                  >
+                    {copiedLink ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+                    {copiedLink ? 'Copied' : 'Copy Link'}
+                  </button>
+                </div>
+              </div>
+            )}
+
+            <div className="p-6 rounded-xl bg-[var(--bg-surface-lowest)] border border-[var(--border-subtle)] text-center space-y-3">
+              <p className="text-sm text-[var(--text-primary)] font-medium">
+                Sign in with Google to create your own workspaces, manage share settings, or invite teammates by email.
+              </p>
+              <button
+                type="button"
+                onClick={onSignIn}
+                className="px-4 py-2 text-xs font-semibold rounded-lg bg-[var(--accent-primary)] text-[var(--accent-primary-text)] hover:opacity-90 transition-all"
+              >
+                Sign in with Google
+              </button>
+            </div>
           </div>
         ) : (
           <>
@@ -323,6 +465,106 @@ export const WorkspaceMembersModal: React.FC<WorkspaceMembersModalProps> = ({
                 </div>
               )}
             </div>
+
+            {/* Share Workspace via Unrestricted Link */}
+            {activeWorkspace && (
+              <div
+                ref={shareSectionRef}
+                className={`p-4 rounded-xl bg-[var(--bg-surface-lowest)] border space-y-3 transition-colors ${
+                  focusShareSection
+                    ? 'border-[var(--accent-primary)]/60 ring-1 ring-[var(--accent-primary)]/20'
+                    : 'border-[var(--border-subtle)]'
+                }`}
+              >
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)]">
+                    <Link2 className="w-3.5 h-3.5 text-[var(--accent-primary)]" />
+                    <span>Share Workspace via Link</span>
+                  </div>
+                  <span
+                    className={`text-[11px] font-mono font-semibold flex items-center gap-1 ${
+                      shareUrl ? 'text-emerald-400' : 'text-[var(--text-muted)]'
+                    }`}
+                  >
+                    <Globe className="w-3 h-3" />
+                    {shareUrl ? 'Anyone with link · No restrictions' : 'Private (Link off)'}
+                  </span>
+                </div>
+
+                {shareUrl ? (
+                  <div className="space-y-2.5">
+                    <p className="text-xs text-[var(--text-secondary)]">
+                      Share this link with anyone. Recipients can open <strong>{activeWorkspace.name}</strong> and view, create, edit, or update tasks immediately without sign-in or email restrictions.
+                    </p>
+                    <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+                      <input
+                        type="text"
+                        readOnly
+                        value={shareUrl}
+                        onFocus={(e) => e.currentTarget.select()}
+                        aria-label="Generated workspace share link"
+                        className="flex-1 px-3 py-2 text-xs font-mono rounded-lg bg-[var(--bg-surface)] border border-[var(--border-subtle)] text-[var(--text-primary)] focus:outline-none focus:border-[var(--accent-primary)]"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => copyToClipboard(shareUrl)}
+                        className="px-4 py-2 text-xs font-semibold rounded-lg bg-[var(--accent-primary)] text-[var(--accent-primary-text)] hover:opacity-90 transition-all flex items-center justify-center gap-1.5 shrink-0"
+                      >
+                        {copiedLink ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+                        {copiedLink ? 'Copied!' : 'Copy Link'}
+                      </button>
+                    </div>
+
+                    {isOwner && (
+                      <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
+                        <span className="text-[11px] text-[var(--text-muted)]">
+                          Regenerating creates a fresh URL and invalidates the previous link.
+                        </span>
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            disabled={isUpdatingShare}
+                            onClick={handleRegenerateShare}
+                            className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] font-medium rounded-md border border-[var(--border-subtle)] bg-[var(--bg-surface)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:border-[var(--border-strong)] disabled:opacity-50 transition-colors"
+                          >
+                            <RefreshCw className={`w-3 h-3 ${isUpdatingShare ? 'animate-spin' : ''}`} />
+                            Regenerate Link
+                          </button>
+                          <button
+                            type="button"
+                            disabled={isUpdatingShare}
+                            onClick={handleDisableShare}
+                            className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] font-medium rounded-md border border-red-500/30 bg-red-500/10 text-red-400 hover:bg-red-500/20 disabled:opacity-50 transition-colors"
+                          >
+                            <Link2Off className="w-3 h-3" />
+                            Disable Link
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                    <p className="text-xs text-[var(--text-secondary)]">
+                      {isOwner
+                        ? 'Generate an unrestricted share link so anyone you send it to can access and collaborate in this workspace.'
+                        : `Link sharing is currently turned off. Ask the owner (${activeWorkspace.ownerEmail}) to generate a share link.`}
+                    </p>
+                    {isOwner && (
+                      <button
+                        type="button"
+                        disabled={isUpdatingShare}
+                        onClick={handleEnableShare}
+                        className="px-4 py-2 text-xs font-semibold rounded-lg bg-[var(--accent-primary)] text-[var(--accent-primary-text)] hover:opacity-90 disabled:opacity-50 transition-all flex items-center justify-center gap-1.5 shrink-0"
+                      >
+                        <Link2 className="w-3.5 h-3.5" />
+                        {isUpdatingShare ? 'Generating...' : 'Generate Share Link'}
+                      </button>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
 
             {/* Add Person by Email Form */}
             {isOwner ? (

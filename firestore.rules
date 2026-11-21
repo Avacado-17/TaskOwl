@@ -60,11 +60,24 @@ service cloud.firestore {
         );
     }
 
+    function isPublicSharedWorkspace(workspaceId) {
+      return workspaceExists(workspaceId)
+        && 'shareEnabled' in workspaceDoc(workspaceId)
+        && workspaceDoc(workspaceId).shareEnabled == true
+        && 'shareToken' in workspaceDoc(workspaceId)
+        && workspaceDoc(workspaceId).shareToken is string
+        && workspaceDoc(workspaceId).shareToken.size() >= 8;
+    }
+
+    function isWorkspaceAccessible(workspaceId) {
+      return isWorkspaceMember(workspaceId) || isPublicSharedWorkspace(workspaceId);
+    }
+
     // --- Entity Validation Helpers ---
 
     function isValidWorkspace(data) {
       return data.keys().hasAll(['id', 'name', 'ownerId', 'ownerEmail', 'memberEmails', 'createdAt'])
-        && data.keys().hasOnly(['id', 'name', 'ownerId', 'ownerEmail', 'memberEmails', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['id', 'name', 'ownerId', 'ownerEmail', 'memberEmails', 'shareEnabled', 'shareToken', 'createdAt', 'updatedAt'])
         && data.id is string && data.id.size() >= 1 && data.id.size() <= 128
         && data.name is string && data.name.size() >= 1 && data.name.size() <= 120
         && data.ownerId is string && data.ownerId.size() >= 1 && data.ownerId.size() <= 128
@@ -72,8 +85,30 @@ service cloud.firestore {
         && data.memberEmails is list && data.memberEmails.size() >= 1 && data.memberEmails.size() <= 50
         && data.memberEmails[0] is string && data.memberEmails[0].size() >= 3 && data.memberEmails[0].size() <= 254
         && data.ownerEmail in data.memberEmails
+        && (!('shareEnabled' in data) || data.shareEnabled is bool)
+        && (!('shareToken' in data) || (data.shareToken is string && data.shareToken.size() <= 128 && (data.shareToken.size() == 0 || data.shareToken.matches('^[a-zA-Z0-9_\\-]+$'))))
         && data.createdAt is string && data.createdAt.size() >= 1 && data.createdAt.size() <= 64
         && (!('updatedAt' in data) || (data.updatedAt is string && data.updatedAt.size() <= 64));
+    }
+
+    function isValidWorkspaceShare(data) {
+      return data.keys().hasAll(['token', 'workspaceId', 'workspaceName', 'ownerId', 'active', 'createdAt'])
+        && data.keys().hasOnly(['token', 'workspaceId', 'workspaceName', 'ownerId', 'active', 'createdAt'])
+        && isValidId(data.token) && data.token.size() >= 8
+        && isValidId(data.workspaceId)
+        && data.workspaceName is string && data.workspaceName.size() >= 1 && data.workspaceName.size() <= 120
+        && data.ownerId is string && data.ownerId.size() >= 1 && data.ownerId.size() <= 128
+        && data.active is bool
+        && data.createdAt is string && data.createdAt.size() >= 1 && data.createdAt.size() <= 64;
+    }
+
+    function isValidSavedShare(data) {
+      return data.keys().hasAll(['workspaceId', 'shareToken', 'workspaceName', 'savedAt'])
+        && data.keys().hasOnly(['workspaceId', 'shareToken', 'workspaceName', 'savedAt'])
+        && isValidId(data.workspaceId)
+        && isValidId(data.shareToken) && data.shareToken.size() >= 8
+        && data.workspaceName is string && data.workspaceName.size() >= 1 && data.workspaceName.size() <= 120
+        && data.savedAt is string && data.savedAt.size() >= 1 && data.savedAt.size() <= 64;
     }
 
     function isValidWorkspaceMember(data) {
@@ -183,11 +218,38 @@ service cloud.firestore {
         && (!('actionUrl' in data) || (data.actionUrl is string && data.actionUrl.size() <= 500));
     }
 
+    // --- Public Share Link Lookup ---
+    match /workspaceShares/{shareToken} {
+      allow get: if isValidId(shareToken)
+        && existing().active == true;
+      allow list: if false;
+
+      allow create: if isValidId(shareToken)
+        && isValidWorkspaceShare(incoming())
+        && incoming().token == shareToken
+        && incoming().ownerId == request.auth.uid
+        && isWorkspaceOwner(incoming().workspaceId);
+
+      allow update: if isValidId(shareToken)
+        && isValidWorkspaceShare(incoming())
+        && incoming().token == existing().token
+        && incoming().workspaceId == existing().workspaceId
+        && incoming().ownerId == existing().ownerId
+        && incoming().createdAt == existing().createdAt
+        && isWorkspaceOwner(existing().workspaceId);
+
+      allow delete: if isValidId(shareToken)
+        && isWorkspaceOwner(existing().workspaceId);
+    }
+
     // --- Shared Workspaces ---
     match /workspaces/{workspaceId} {
-      allow get: if isVerified() && (
-        existing().ownerId == request.auth.uid ||
-        (userEmail().size() > 0 && userEmail() in existing().memberEmails)
+      allow get: if isValidId(workspaceId) && (
+        (isVerified() && (
+          existing().ownerId == request.auth.uid ||
+          (userEmail().size() > 0 && userEmail() in existing().memberEmails)
+        )) ||
+        ('shareEnabled' in existing() && existing().shareEnabled == true)
       );
 
       allow list: if isVerified() && (
@@ -211,7 +273,7 @@ service cloud.firestore {
         && incoming().ownerId == existing().ownerId
         && incoming().ownerEmail == existing().ownerEmail
         && incoming().createdAt == existing().createdAt
-        && incoming().diff(existing()).affectedKeys().hasOnly(['name', 'memberEmails', 'updatedAt']);
+        && incoming().diff(existing()).affectedKeys().hasOnly(['name', 'memberEmails', 'shareEnabled', 'shareToken', 'updatedAt']);
 
       allow delete: if isVerified()
         && isValidId(workspaceId)
@@ -219,8 +281,8 @@ service cloud.firestore {
 
       // Workspace Members Subcollection
       match /members/{memberId} {
-        allow get: if isValidId(memberId) && isWorkspaceMember(workspaceId);
-        allow list: if isWorkspaceMember(workspaceId);
+        allow get: if isValidId(memberId) && isWorkspaceAccessible(workspaceId);
+        allow list: if isWorkspaceAccessible(workspaceId);
 
         allow create: if isWorkspaceOwner(workspaceId)
           && isValidId(memberId)
@@ -246,15 +308,15 @@ service cloud.firestore {
 
       // Workspace Tasks Subcollection
       match /tasks/{taskId} {
-        allow get: if isValidId(taskId) && isWorkspaceMember(workspaceId);
-        allow list: if isWorkspaceMember(workspaceId);
+        allow get: if isValidId(taskId) && isWorkspaceAccessible(workspaceId);
+        allow list: if isWorkspaceAccessible(workspaceId);
 
-        allow create: if isWorkspaceMember(workspaceId)
+        allow create: if isWorkspaceAccessible(workspaceId)
           && isValidId(taskId)
           && isValidTask(incoming())
           && incoming().id == taskId;
 
-        allow update: if isWorkspaceMember(workspaceId)
+        allow update: if isWorkspaceAccessible(workspaceId)
           && isValidId(taskId)
           && isValidTask(incoming())
           && incoming().id == existing().id
@@ -266,7 +328,7 @@ service cloud.firestore {
             'escalated', 'email48hSent', 'email24hSent', 'completedAt'
           ]);
 
-        allow delete: if isValidId(taskId) && isWorkspaceMember(workspaceId);
+        allow delete: if isValidId(taskId) && isWorkspaceAccessible(workspaceId);
       }
 
       // Workspace Preferences
@@ -277,16 +339,16 @@ service cloud.firestore {
       }
 
       match /preferences/customization {
-        allow get: if isWorkspaceMember(workspaceId);
+        allow get: if isWorkspaceAccessible(workspaceId);
         allow create, update: if isWorkspaceMember(workspaceId) && isValidDashboardCustomization(incoming());
         allow delete: if isWorkspaceOwner(workspaceId);
       }
 
       // Workspace Logs
       match /logs/{logId} {
-        allow get: if isValidId(logId) && isWorkspaceMember(workspaceId);
-        allow list: if isWorkspaceMember(workspaceId);
-        allow create: if isWorkspaceMember(workspaceId)
+        allow get: if isValidId(logId) && isWorkspaceAccessible(workspaceId);
+        allow list: if isWorkspaceAccessible(workspaceId);
+        allow create: if isWorkspaceAccessible(workspaceId)
           && isValidId(logId)
           && isValidLog(incoming())
           && incoming().id == logId;
@@ -295,13 +357,13 @@ service cloud.firestore {
 
       // Workspace Notifications
       match /notifications/{notificationId} {
-        allow get: if isValidId(notificationId) && isWorkspaceMember(workspaceId);
-        allow list: if isWorkspaceMember(workspaceId);
-        allow create: if isWorkspaceMember(workspaceId)
+        allow get: if isValidId(notificationId) && isWorkspaceAccessible(workspaceId);
+        allow list: if isWorkspaceAccessible(workspaceId);
+        allow create: if isWorkspaceAccessible(workspaceId)
           && isValidId(notificationId)
           && isValidNotification(incoming())
           && incoming().id == notificationId;
-        allow update: if isWorkspaceMember(workspaceId)
+        allow update: if isWorkspaceAccessible(workspaceId)
           && isValidId(notificationId)
           && isValidNotification(incoming())
           && incoming().id == existing().id
@@ -311,8 +373,18 @@ service cloud.firestore {
       }
     }
 
-    // --- Legacy Personal Collections (Preserved for 1-time migration) ---
+    // --- Saved Shared Workspaces & Legacy Personal Collections ---
     match /users/{userId} {
+      match /savedShares/{workspaceId} {
+        allow get: if isOwner(userId) && isValidId(workspaceId);
+        allow list: if isOwner(userId);
+        allow create, update: if isOwner(userId)
+          && isValidId(workspaceId)
+          && isValidSavedShare(incoming())
+          && incoming().workspaceId == workspaceId;
+        allow delete: if isOwner(userId) && isValidId(workspaceId);
+      }
+
       match /tasks/{taskId} {
         allow get: if isOwner(userId) && isValidId(taskId);
         allow list: if isOwner(userId);
